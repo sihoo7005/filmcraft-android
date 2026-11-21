@@ -170,11 +170,18 @@ private fun clipTools(ed: EditorController, c: ClipInfo): List<Tool> {
     }
 }
 
-private fun captionTools(ed: EditorController, id: ULong) = listOf(
-    Tool("editor_tool_edit_caption", "Edit text", LucideIcons.Keyboard.glyph()) { ed.panel = Panel.TextInput(null, caption = id) },
-    Tool("editor_tool_caption_style", "Style", LucideIcons.Paintbrush.glyph()) { ed.panel = Panel.Captions },
-    Tool("editor_tool_delete_caption", "Delete", LucideIcons.Trash2.glyph()) { ed.deleteCaption(id) },
-)
+private fun captionTools(ed: EditorController, id: ULong): List<Tool> {
+    val c = ed.timeline?.captions?.firstOrNull { it.id == id }
+    val at = TimelineMath.snap(ed.playhead, ed.rateNum, ed.rateDen)
+    val canSplitTime = c != null && at - c.start >= ed.frameTicks && c.start + c.duration - at >= ed.frameTicks
+    return listOf(
+        Tool("editor_tool_edit_caption", "Edit text", LucideIcons.Keyboard.glyph()) { ed.panel = Panel.TextInput(null, caption = id) },
+        Tool("editor_tool_split_caption_time", "Split time", LucideIcons.Scissors.glyph(), enabled = canSplitTime) { ed.splitCaptionAtPlayhead(id) },
+        Tool("editor_tool_split_caption_text", "Split text", LucideIcons.Type.glyph()) { ed.panel = Panel.TextInput(null, caption = id) },
+        Tool("editor_tool_caption_style", "Style", LucideIcons.Paintbrush.glyph()) { ed.panel = Panel.Captions },
+        Tool("editor_tool_delete_caption", "Delete", LucideIcons.Trash2.glyph()) { ed.deleteCaption(id) },
+    )
+}
 
 private fun retimeTools(ed: EditorController, c: ClipInfo) = listOf(
     Tool("editor_tool_speed", "Speed", LucideIcons.Gauge.glyph(), active = ed.panel == Panel.Speed) { ed.panel = Panel.Speed },
