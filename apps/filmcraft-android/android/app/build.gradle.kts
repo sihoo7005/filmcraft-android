@@ -238,7 +238,8 @@ abstract class LucideIconsTask : DefaultTask() {
 android {
     namespace = "io.github.artcraftandroid.filmcraft"
     compileSdk = 37
-    ndkVersion = "29.0.14206865"
+    // Avoid downloading a Linux-x86_64 NDK on the native Termux host.
+    if (!termuxArm64) ndkVersion = "29.0.14206865"
 
     if (termuxArm64) {
         // Don't invoke the x86_64 NDK llvm-strip executable on an ARM64 Termux host.
