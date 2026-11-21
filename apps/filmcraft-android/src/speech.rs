@@ -606,6 +606,61 @@ pub(crate) fn delete(s: &mut Session, caption: u64) -> Result<(), MobileError> {
     Ok(())
 }
 
+/** Split a caption at the timeline playhead; the two halves initially share the text.
+ * The user can then divide that text between them with [split_text].
+ */
+pub(crate) fn split_at_time(s: &mut Session, caption: u64, at: i64) -> Result<u64, MobileError> {
+    let result = ex(s, "captions.split", json!({"caption": caption, "time": at}))?;
+    result["captions"].as_array().and_then(|ids| ids.first()).and_then(Value::as_u64)
+        .ok_or_else(|| MobileError::Command("The caption could not be split here.".into()))
+}
+
+/// Split the words at the chosen cursor position. If an adjacent caption has exactly the
+/// same text (the result of Split time), distribute the words between the existing
+/// halves and preserve their precise cut time. Otherwise create two caption segments
+/// with durations initially proportional to their text lengths. One undo step either way.
+pub(crate) fn split_text(s: &mut Session, caption: u64, before: &str, after: &str) -> Result<u64, MobileError> {
+    let (before, after) = (before.trim(), after.trim());
+    if before.is_empty() || after.is_empty() {
+        return Err(MobileError::Command("Place the cursor between two non-empty parts of the caption.".into()));
+    }
+    let (original, pair) = {
+        let (_, seq) = model::sequence(s)?;
+        let track = seq.caption_tracks.iter()
+            .find(|track| track.caption(ClipId(caption)).is_some())
+            .ok_or_else(|| MobileError::Command("The caption is no longer on the timeline.".into()))?;
+        let current = track.caption(ClipId(caption))
+            .ok_or_else(|| MobileError::Command("The caption is no longer on the timeline.".into()))?.clone();
+        let next = track.captions.iter().find(|c| c.start == current.end() && c.text == current.text);
+        let previous = track.captions.iter().find(|c| c.end() == current.start && c.text == current.text);
+        let pair = next.map(|c| (current.id, c.id))
+            .or_else(|| previous.map(|c| (c.id, current.id)));
+        (current, pair)
+    };
+    let all_chars = before.chars().count() + after.chars().count();
+    let fraction = before.chars().count() as f64 / all_chars as f64;
+    let rate = s.sequence_rate();
+    let right_id = s.edit_sequence("Split Caption Text", |q, ctx, st| {
+        let (left, right) = if let Some(existing) = pair {
+            existing
+        } else {
+            if original.duration < ctx.min_duration + ctx.min_duration {
+                return Err(filmcraft_edit::EditError::TooShort.into());
+            }
+            let offset = Tick((original.duration.0 as f64 * fraction).round() as i64);
+            let at = rate.snap_nearest(original.start + offset)
+                .clamp(original.start + ctx.min_duration, original.end() - ctx.min_duration);
+            (original.id, filmcraft_edit::captions::split_caption(q, original.id, at, ctx)?)
+        };
+        filmcraft_edit::captions::set_caption(q, left, Some(before), None)?;
+        filmcraft_edit::captions::set_caption(q, right, Some(after), None)?;
+        st.caption_selection = vec![right];
+        Ok(right.0)
+    })?;
+    edits::settle(s);
+    Ok(right_id)
+}
+
 /// Where a caption sits on the main track, taken before a main-track edit.
 enum Anchor {
     /// Over main-track clip `clip` (showing `item`), at media time `source`, `offset` into the clip.
