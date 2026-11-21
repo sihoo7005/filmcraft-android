@@ -64,10 +64,12 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.TextStyle as UiTextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -100,7 +102,12 @@ fun TextInputStrip(ed: EditorController, panel: Panel.TextInput, modifier: Modif
             else -> panel.clip?.let { id -> ed.timeline?.lanes?.flatMap { it.clips }?.firstOrNull { it.id == id }?.text }
         }.orEmpty()
     }
-    var text by remember(panel) { mutableStateOf(initial) }
+    var field by remember(panel) { mutableStateOf(TextFieldValue(initial, selection = TextRange(initial.length))) }
+    val text = field.text
+    val splitPoint = field.selection.start
+    val canSplitText = panel.caption != null && field.selection.collapsed &&
+        splitPoint in 1 until text.length &&
+        text.substring(0, splitPoint).isNotBlank() && text.substring(splitPoint).isNotBlank()
     // new text shows on the preview while it is typed
     LaunchedEffect(text, panel) { ed.typing = if (panel.clip == null && panel.caption == null) text else "" }
     androidx.compose.runtime.DisposableEffect(panel) { onDispose { ed.typing = "" } }
@@ -128,8 +135,8 @@ fun TextInputStrip(ed: EditorController, panel: Panel.TextInput, modifier: Modif
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         BasicTextField(
-            value = text,
-            onValueChange = { text = it },
+            value = field,
+            onValueChange = { field = it },
             textStyle = UiTextStyle(fontFamily = Inter, fontSize = 17.sp, color = Fc.Title),
             cursorBrush = SolidColor(Fc.Title),
             // Return starts a new line; the check button adds the text
@@ -141,6 +148,24 @@ fun TextInputStrip(ed: EditorController, panel: Panel.TextInput, modifier: Modif
                 .padding(horizontal = 14.dp, vertical = 7.dp)
                 .focusRequester(focus),
         )
+        // Divide words at the text cursor. A previous timeline cut keeps its exact time.
+        if (panel.caption != null) {
+            Box(
+                Modifier
+                    .height(40.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(if (canSplitText) Fc.Accent else Fc.SliderOff)
+                    .clickable(enabled = canSplitText, role = Role.Button) {
+                        ed.splitCaptionAtText(panel.caption, text.substring(0, splitPoint), text.substring(splitPoint))
+                    }
+                    .padding(horizontal = 10.dp)
+                    .testTag("caption_split_at_cursor")
+                    .semantics { contentDescription = "Split caption text at cursor" },
+                contentAlignment = Alignment.Center,
+            ) {
+                Text("Split here", style = FcType.Label, color = if (canSplitText) Color.White else Fc.Detail)
+            }
+        }
         // a 32 dp button in a 48 dp touch area
         Box(
             Modifier
