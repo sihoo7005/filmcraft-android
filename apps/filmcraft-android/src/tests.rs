@@ -1072,3 +1072,32 @@ fn caption_split_by_text_alone_allocates_proportional_time() {
     m.undo();
     assert_eq!(m.timeline().unwrap().captions.len(), 1);
 }
+
+#[test]
+fn caption_timing_edit_moves_trims_and_rejects_overlap() {
+    let m = MobileSession::new();
+    m.new_project("Caption timing".into(), 1080, 1920, 30).unwrap();
+    let insert = |time: i64, words: &str| -> u64 {
+        let value = m.execute("captions.add".into(), serde_json::json!({
+            "time": time, "durationSeconds": 2.0, "text": words
+        }).to_string()).unwrap();
+        serde_json::from_str::<serde_json::Value>(&value).unwrap()["caption"].as_u64().unwrap()
+    };
+    let first = insert(0, "첫 자막");
+    let second = insert(4 * SEC, "두 번째 자막");
+    m.set_caption_times(first, SEC, 3 * SEC).unwrap(); // move by 1 s
+    let t = m.timeline().unwrap();
+    let a = t.captions.iter().find(|c| c.id == first).unwrap();
+    assert_eq!((a.start, a.duration), (SEC, 2 * SEC));
+    assert!(m.set_caption_times(first, 3 * SEC, 5 * SEC).is_err(), "caption ranges cannot overlap");
+    assert!(m.set_caption_times(first, SEC, SEC).is_err(), "caption must last at least a frame");
+    m.set_caption_times(first, SEC, 4 * SEC).unwrap(); // trim right up to next caption
+    let t = m.timeline().unwrap();
+    assert_eq!(t.captions[0].duration, 3 * SEC);
+    assert_eq!(t.captions[1].id, second);
+    assert_eq!(t.captions[1].start, 4 * SEC);
+    m.undo();
+    assert_eq!(m.timeline().unwrap().captions[0].duration, 2 * SEC);
+    m.undo();
+    assert_eq!(m.timeline().unwrap().captions[0].start, 0);
+}
