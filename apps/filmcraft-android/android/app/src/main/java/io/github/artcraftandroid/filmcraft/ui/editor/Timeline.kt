@@ -72,6 +72,7 @@ import kotlin.math.hypot
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
+import kotlin.math.roundToLong
 import kotlin.math.sqrt
 
 /** A trim in progress: which clip, which edge, how far (ticks). */
@@ -79,6 +80,9 @@ private data class TrimDrag(val clip: ULong, val head: Boolean, val delta: Long)
 
 /** A clip being moved: by how far in time and to which lane. */
 private data class MoveDrag(val clip: ULong, val dx: Float, val dy: Float)
+
+/** A caption timing edit preview, committed only when the finger lifts. */
+private data class CaptionTimingDrag(val caption: ULong, val start: Long, val end: Long)
 
 /** The timeline: a ruler, the lanes and the fixed playhead in the middle. */
 @Composable
@@ -89,6 +93,7 @@ fun Timeline(ed: EditorController, modifier: Modifier = Modifier, compact: Boole
     val haptic = LocalHapticFeedback.current
     var trim by remember { mutableStateOf<TrimDrag?>(null) }
     var move by remember { mutableStateOf<MoveDrag?>(null) }
+    var captionDrag by remember { mutableStateOf<CaptionTimingDrag?>(null) }
     var scrollY by remember { mutableStateOf(0f) }
     val edState by rememberUpdatedState(ed)
     BoxWithConstraints(modifier.background(Fc.Black).testTag("editor_timeline")) {
@@ -133,6 +138,7 @@ fun Timeline(ed: EditorController, modifier: Modifier = Modifier, compact: Boole
                                 if (done != null && done.delta != 0L) e.trim(done.clip, done.head, TimelineMath.snap(abs(done.delta), e.rateNum, e.rateDen) * if (done.delta < 0) -1 else 1)
                                 return@awaitEachGesture
                             }
+                            val hitCaption = g.captionAt(down.position)
                             val hitClip = g.clipAt(down.position)
                             val start = down.position
                             var decided = false
@@ -140,8 +146,40 @@ fun Timeline(ed: EditorController, modifier: Modifier = Modifier, compact: Boole
                                 val remaining = longPress - (android.os.SystemClock.uptimeMillis() - down.uptimeMillis).coerceAtLeast(0)
                                 val ev = withTimeoutOrNull(maxOf(remaining, 1L)) { awaitPointerEvent() }
                                 if (ev == null) {
-                                    // held still: pick the clip up
-                                    if (hitClip != null) {
+                                    // A long press on a caption moves it, or trims the edge
+                                    // the finger started near. One edit is saved on release.
+                                    if (hitCaption != null) {
+                                        decided = true
+                                        e.gesture = true
+                                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                        e.selectCaption(hitCaption.id)
+                                        val mode = g.captionMode(hitCaption, start)
+                                        val limits = g.captionLimits(hitCaption, e.duration)
+                                        val end = hitCaption.start + hitCaption.duration
+                                        var dx = 0f
+                                        captionDrag = CaptionTimingDrag(hitCaption.id, hitCaption.start, end)
+                                        while (true) {
+                                            val m = awaitPointerEvent()
+                                            val c = m.changes.firstOrNull { it.id == down.id } ?: break
+                                            if (!c.pressed) break
+                                            dx += c.positionChange().x
+                                            c.consume()
+                                            // Count complete frames in either direction, so dragging
+                                            // left does not round one tiny movement into a full frame.
+                                            val shifted = (TimelineMath.ticksFor(dx, e.pxPerSecond).toDouble() /
+                                                e.frameTicks).roundToLong()
+                                            val delta = TimelineMath.tickOfFrame(shifted, e.rateNum, e.rateDen)
+                                            val (a, b) = TimelineMath.captionTiming(
+                                                hitCaption.start, end, delta, limits.first, limits.second,
+                                                e.frameTicks, mode,
+                                            )
+                                            captionDrag = CaptionTimingDrag(hitCaption.id, a, b)
+                                        }
+                                        val done = captionDrag
+                                        captionDrag = null
+                                        e.gesture = false
+                                        if (done != null) e.setCaptionTiming(done.caption, done.start, done.end)
+                                    } else if (hitClip != null) {
                                         decided = true
                                         e.gesture = true
                                         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
@@ -212,7 +250,7 @@ fun Timeline(ed: EditorController, modifier: Modifier = Modifier, compact: Boole
                         }
                     },
             ) {
-                drawTimeline(geo, ed, measurer, trim, move)
+                drawTimeline(geo, ed, measurer, trim, move, captionDrag)
             }
             // the add-media button, at the right end of the main track
             val mainTop = geo.mainTop
@@ -291,6 +329,27 @@ private class Geometry(
 
     fun captionAt(p: Offset): CaptionInfo? = t.captions.firstOrNull { captionRect(it)?.contains(p) == true }
 
+    /** A long press near the visible edge changes that edge; otherwise it moves the caption. */
+    fun captionMode(c: CaptionInfo, finger: Offset): CaptionTimingMode {
+        val r = captionRect(c) ?: return CaptionTimingMode.MOVE
+        val edgeWidth = min(12f * dp, r.width * 0.24f)
+        return when {
+            finger.x <= r.left + edgeWidth -> CaptionTimingMode.TRIM_START
+            finger.x >= r.right - edgeWidth -> CaptionTimingMode.TRIM_END
+            else -> CaptionTimingMode.MOVE
+        }
+    }
+
+    /** Keep caption drags out of their neighbours and the bounds of the video. */
+    fun captionLimits(c: CaptionInfo, duration: Long): Pair<Long, Long> {
+        val end = c.start + c.duration
+        val before = t.captions.filter { it.id != c.id && it.start + it.duration <= c.start }
+            .maxOfOrNull { it.start + it.duration } ?: 0L
+        val after = t.captions.filter { it.id != c.id && it.start >= end }
+            .minOfOrNull { it.start } ?: max(duration, end)
+        return before to min(after, max(duration, end))
+    }
+
     fun clipAt(p: Offset): ClipInfo? {
         for ((i, lane) in t.lanes.withIndex()) {
             for (c in lane.clips) if (rectOf(i, c).contains(p)) return c
@@ -353,8 +412,6 @@ private class Geometry(
         val cap = captionAt(p)
         if (cap != null) {
             e.selectCaption(cap.id)
-            val at = time(p.x).coerceIn(cap.start, cap.start + cap.duration - e.frameTicks)
-            e.seek(TimelineMath.snap(at, e.rateNum, e.rateDen), draft = false)
             return
         }
         val c = clipAt(p)
@@ -364,8 +421,6 @@ private class Geometry(
             return
         }
         e.select(c.id)
-        val at = time(p.x).coerceIn(c.start, c.start + c.duration - e.frameTicks)
-        e.seek(TimelineMath.snap(at, e.rateNum, e.rateDen), draft = false)
     }
 
     /** A picked-up clip let go after moving by (dx, dy). */
@@ -411,7 +466,10 @@ private class Geometry(
     }
 }
 
-private fun DrawScope.drawTimeline(g: Geometry, ed: EditorController, measurer: androidx.compose.ui.text.TextMeasurer, trim: TrimDrag?, move: MoveDrag?) {
+private fun DrawScope.drawTimeline(
+    g: Geometry, ed: EditorController, measurer: androidx.compose.ui.text.TextMeasurer,
+    trim: TrimDrag?, move: MoveDrag?, captionDrag: CaptionTimingDrag?,
+) {
     val dp = g.dp
     @Suppress("UNUSED_VARIABLE") val version = ed.media.version
     val sel = ed.timeline?.selected
@@ -424,9 +482,12 @@ private fun DrawScope.drawTimeline(g: Geometry, ed: EditorController, measurer: 
     g.captionTop?.let { drawRect(Fc.Lane, Offset(0f, it), Size(size.width, g.captionH)) }
     clipRect(top = g.rulerH) {
         for (c in g.t.captions) {
-            val r = g.captionRect(c) ?: continue
+            val r = if (captionDrag?.caption == c.id) {
+                val top = g.captionTop ?: continue
+                Rect(g.x(captionDrag.start), top, g.x(captionDrag.end), top + g.captionH)
+            } else g.captionRect(c) ?: continue
             if (r.right < 0 || r.left > size.width) continue
-            drawCaption(c, r, c.id == ed.selectedCaption, dp, measurer)
+            drawCaption(c, r, c.id == ed.selectedCaption || captionDrag?.caption == c.id, dp, measurer)
         }
         for ((i, lane) in g.t.lanes.withIndex()) {
             for (c in lane.clips) {
