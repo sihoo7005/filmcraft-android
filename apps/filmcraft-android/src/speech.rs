@@ -606,6 +606,14 @@ pub(crate) fn delete(s: &mut Session, caption: u64) -> Result<(), MobileError> {
     Ok(())
 }
 
+/** Change the display interval of a caption (engine ticks, frame-snapped by the engine).
+ * Adjacent captions must not overlap; the engine validates the new range.
+ */
+pub(crate) fn set_times(s: &mut Session, caption: u64, start: i64, end: i64) -> Result<(), MobileError> {
+    ex(s, "captions.setTimes", json!({"caption": caption, "startTime": start, "endTime": end}))?;
+    Ok(())
+}
+
 /** Split a caption at the timeline playhead; the two halves initially share the text.
  * The user can then divide that text between them with [split_text].
  */
