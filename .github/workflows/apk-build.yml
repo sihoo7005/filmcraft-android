@@ -1,5 +1,6 @@
 # Manually runnable Android debug build. The push trigger only runs when this
 # workflow file itself changes, avoiding Android builds on regular source pushes.
+# One-time validation build: caption time and cursor splitting (2026-11-21).
 name: Build Debug APK
 
 on:
