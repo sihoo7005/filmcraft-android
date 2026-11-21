@@ -493,6 +493,16 @@ impl MobileSession {
         speech::set_text(&mut self.lock(), caption, &text)
     }
 
+    /// Cut the selected caption into two at `at` (engine ticks).
+    pub fn split_caption_time(&self, caption: u64, at: i64) -> Result<u64, MobileError> {
+        speech::split_at_time(&mut self.lock(), caption, at)
+    }
+
+    /// Split its words at the text cursor; reuse a preceding time cut when available.
+    pub fn split_caption_text(&self, caption: u64, before: String, after: String) -> Result<u64, MobileError> {
+        speech::split_text(&mut self.lock(), caption, &before, &after)
+    }
+
     pub fn delete_caption(&self, caption: u64) -> Result<(), MobileError> {
         speech::delete(&mut self.lock(), caption)
     }
