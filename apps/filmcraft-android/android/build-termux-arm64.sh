@@ -21,10 +21,29 @@ rust_host="$(rustc -vV | sed -n 's/^host: //p')"
 [[ "$rust_host" == "aarch64-linux-android" ]] ||
   fail "Rust host is '$rust_host', but native Termux needs aarch64-linux-android. Use the Termux rust package."
 
-export ANDROID_HOME="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-$HOME/android-sdk}}"
-export ANDROID_SDK_ROOT="$ANDROID_HOME"
-[[ -f "$ANDROID_HOME/platforms/android-37/android.jar" ]] ||
-  fail "Android SDK platform 37 is missing under $ANDROID_HOME. Install platforms;android-37 (and SDK build-tools) first."
+# Respect an explicitly chosen SDK. Otherwise prefer the installed Termux SDK,
+# including the ~/.android-sdk directory used by some phone setups.
+if [[ -n "${ANDROID_HOME:-}" ]]; then
+  sdk_root="$ANDROID_HOME"
+elif [[ -n "${ANDROID_SDK_ROOT:-}" ]]; then
+  sdk_root="$ANDROID_SDK_ROOT"
+elif [[ -f "$HOME/.android-sdk/platforms/android-37.0/android.jar" ||
+        -f "$HOME/.android-sdk/platforms/android-37/android.jar" ]]; then
+  sdk_root="$HOME/.android-sdk"
+else
+  sdk_root="$HOME/android-sdk"
+fi
+export ANDROID_HOME="$sdk_root"
+export ANDROID_SDK_ROOT="$sdk_root"
+
+# API 37 is packaged as android-37.0 by newer Android SDK managers.
+if [[ -f "$ANDROID_HOME/platforms/android-37.0/android.jar" ]]; then
+  sdk_platform="$ANDROID_HOME/platforms/android-37.0"
+elif [[ -f "$ANDROID_HOME/platforms/android-37/android.jar" ]]; then
+  sdk_platform="$ANDROID_HOME/platforms/android-37"
+else
+  fail "Android SDK platform 37 is missing under $ANDROID_HOME (expected platforms/android-37.0 or android-37)."
+fi
 [[ -d "$ANDROID_HOME/build-tools" ]] ||
   fail "Android SDK build-tools are missing under $ANDROID_HOME."
 
@@ -45,8 +64,8 @@ export GRADLE_OPTS="${GRADLE_OPTS:+$GRADLE_OPTS }-Dorg.gradle.native=false -Dorg
 cd "$(dirname "$0")"
 [[ -x ./gradlew ]] || chmod +x ./gradlew
 
-printf 'Host: %s | Rust: %s | SDK: %s | aapt2: %s\n' \
-  "$(uname -m)" "$rust_host" "$ANDROID_HOME" "$aapt2_path"
+printf 'Host: %s | Rust: %s | SDK: %s | Platform: %s | aapt2: %s\n' \
+  "$(uname -m)" "$rust_host" "$ANDROID_HOME" "$sdk_platform" "$aapt2_path"
 
 ./gradlew assembleDebug \
   "-Pfilmcraft.termux=true" \
