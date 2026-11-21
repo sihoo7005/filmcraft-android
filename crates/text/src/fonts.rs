@@ -501,8 +501,8 @@ fn is_serif(family: &str) -> bool {
     (f.contains("serif") && !f.contains("sans")) || f.contains("mincho")
 }
 
-/// A face that covers `c`, preferring `prefer`; bundled, craft-fonts and already-registered faces
-/// are searched, in that order.
+/// A face that covers `c`, preferring `prefer`; bundled, craft-fonts, loaded
+/// faces and finally lazily discovered system font files are searched, in that order.
 pub fn fallback_for(c: char, prefer: FaceId) -> FaceId {
     let p = face(prefer);
     if p.has_char(c) || c.is_control() {
@@ -526,6 +526,16 @@ pub fn fallback_for(c: char, prefer: FaceId) -> FaceId {
     }
     for f in faces.iter().filter(|f| f.info.origin != "bundled" && f.bytes.get().is_some()) {
         if f.has_char(c) {
+            return f.id;
+        }
+    }
+    // Android registers /system/fonts at startup, but leaves each face's bytes unloaded.
+    // Probe an unloaded font's character map before loading it, so Hangul (and other
+    // scripts absent from the bundled Latin fonts) can render without loading every
+    // system font into memory. Retain only the first matching face for later glyphs.
+    let character = c.to_string();
+    for f in faces.iter().filter(|f| matches!(&f.info.data, FaceData::File(_)) && f.bytes.get().is_none()) {
+        if f.covers_text(&character) && f.has_char(c) {
             return f.id;
         }
     }
