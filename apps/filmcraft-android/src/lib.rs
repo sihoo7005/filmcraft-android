@@ -493,6 +493,11 @@ impl MobileSession {
         speech::set_text(&mut self.lock(), caption, &text)
     }
 
+    /// Change a caption's start and end at frame boundaries (in engine ticks).
+    pub fn set_caption_times(&self, caption: u64, start: i64, end: i64) -> Result<(), MobileError> {
+        speech::set_times(&mut self.lock(), caption, start, end)
+    }
+
     /// Cut the selected caption into two at `at` (engine ticks).
     pub fn split_caption_time(&self, caption: u64, at: i64) -> Result<u64, MobileError> {
         speech::split_at_time(&mut self.lock(), caption, at)
