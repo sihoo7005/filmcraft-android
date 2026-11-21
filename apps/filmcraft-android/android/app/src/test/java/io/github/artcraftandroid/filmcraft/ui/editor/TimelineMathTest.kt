@@ -81,6 +81,28 @@ class TimelineMathTest {
     }
 
     @Test
+    fun captionMoveAndEdgeTrimsAreClampedToNeighbours() {
+        val a = 2 * TPS
+        val b = 5 * TPS
+        val left = 1 * TPS
+        val right = 7 * TPS
+        val frame = TimelineMath.tickOfFrame(1, 30, 1)
+        fun timing(delta: Long, mode: CaptionTimingMode) =
+            TimelineMath.captionTiming(a, b, delta, left, right, frame, mode)
+
+        // Moving preserves the caption's original three-second length.
+        assertEquals(4 * TPS to 7 * TPS, timing(4 * TPS, CaptionTimingMode.MOVE))
+        assertEquals(1 * TPS to 4 * TPS, timing(-6 * TPS, CaptionTimingMode.MOVE))
+        assertEquals(a to b, timing(0L, CaptionTimingMode.MOVE))
+
+        // Trimming one edge never changes the other edge.
+        assertEquals(3 * TPS to b, timing(TPS, CaptionTimingMode.TRIM_START))
+        assertEquals(left to b, timing(-4 * TPS, CaptionTimingMode.TRIM_START))
+        assertEquals(a to right, timing(8 * TPS, CaptionTimingMode.TRIM_END))
+        assertEquals(a to a + frame, timing(-8 * TPS, CaptionTimingMode.TRIM_END))
+    }
+
+    @Test
     fun theSpeedSliderRunsThroughEvenlySpacedMarks() {
         val anchors = doubleArrayOf(0.1, 1.0, 2.0, 5.0, 10.0)
         assertEquals(1.0, TimelineMath.piecewise(0.25f, anchors), 1e-9)
