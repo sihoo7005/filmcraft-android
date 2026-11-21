@@ -6,6 +6,9 @@ import kotlin.math.floor
 import kotlin.math.max
 import kotlin.math.min
 
+/** What a long press on a caption edits: its placement or one of its edges. */
+enum class CaptionTimingMode { MOVE, TRIM_START, TRIM_END }
+
 /** Engine ticks per second (`filmcraft_time::Tick`). */
 const val TPS: Long = 254_016_000_000L
 
@@ -127,6 +130,31 @@ object TimelineMath {
 
     /** Ticks moved by a horizontal drag of [dx] pixels. */
     fun ticksFor(dx: Float, pxPerSecond: Float): Long = (dx / pxPerSecond * TPS).toLong()
+
+    /** Preview a caption timing drag, keeping it inside the neighbouring captions.
+     * The engine validates the final edit again before saving.
+     */
+    fun captionTiming(
+        start: Long, end: Long, delta: Long, minStart: Long, maxEnd: Long,
+        minDuration: Long, mode: CaptionTimingMode,
+    ): Pair<Long, Long> {
+        val minLength = minDuration.coerceAtLeast(1L)
+        return when (mode) {
+            CaptionTimingMode.MOVE -> {
+                val length = end - start
+                val earliest = minStart.coerceIn(0L, start)
+                val latest = (maxEnd - length).coerceAtLeast(earliest)
+                val moved = (start + delta).coerceIn(earliest, latest)
+                moved to moved + length
+            }
+            CaptionTimingMode.TRIM_START -> {
+                val earliest = minStart.coerceIn(0L, start)
+                (start + delta).coerceIn(earliest, end - minLength) to end
+            }
+            CaptionTimingMode.TRIM_END ->
+                start to (end + delta).coerceIn(start + minLength, maxEnd.coerceAtLeast(end))
+        }
+    }
 
     /**
      * Vertical layout of lanes: [heights] top to bottom, [main] the main track's index among them,
