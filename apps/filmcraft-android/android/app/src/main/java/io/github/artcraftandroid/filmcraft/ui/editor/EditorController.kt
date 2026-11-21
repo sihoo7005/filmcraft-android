@@ -623,6 +623,13 @@ class EditorController(
 
     fun setCaptionText(id: ULong, text: String) = edit { setCaptionText(id, text) }
 
+    /** Commit a single long-press caption timing drag as one undoable edit. */
+    fun setCaptionTiming(id: ULong, start: Long, end: Long) {
+        val caption = timeline?.captions?.firstOrNull { it.id == id } ?: return
+        if (caption.start == start && caption.start + caption.duration == end) return
+        edit { setCaptionTimes(id, start, end) }
+    }
+
     /** First cut the caption at the playhead, keeping both halves' words until assigned. */
     fun splitCaptionAtPlayhead(id: ULong) {
         val caption = timeline?.captions?.firstOrNull { it.id == id } ?: return
