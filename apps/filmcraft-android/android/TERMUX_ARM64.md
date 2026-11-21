@@ -18,9 +18,10 @@ with Termux's Android/Bionic binaries.
    ```
 
 3. Install an **Android SDK with platform 37 and build-tools** in an
-   accessible directory. Set `ANDROID_HOME` (default assumed:
-   `$HOME/android-sdk`). The Android command-line tools' `sdkmanager` is
-   one way to install packages `platforms;android-37` and
+   accessible directory. The script searches `$HOME/.android-sdk` first when it
+   contains API 37, then `$HOME/android-sdk`. Set `ANDROID_HOME` to override.
+   The Android command-line tools' `sdkmanager` is one way to install
+   `platforms;android-37.0` and
    `build-tools;36.0.0`. The current project requests **compileSdk 37**;
    ensure that your native ARM64 `aapt2` handles its resources.
    The official Linux build-tools from Google are usually **x86_64 host
@@ -34,7 +35,7 @@ From the repository root:
 
 ```sh
 cd apps/filmcraft-android/android
-export ANDROID_HOME="$HOME/android-sdk"  # change if the SDK is elsewhere
+export ANDROID_HOME="$HOME/.android-sdk"  # optional; the script auto-detects this path
 bash build-termux-arm64.sh
 ```
 
