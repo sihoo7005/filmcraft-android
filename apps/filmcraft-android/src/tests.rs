@@ -1017,3 +1017,58 @@ fn a_transition_on_a_cut_without_spare_footage_shortens_the_video_by_its_length(
     m.undo();
     assert_eq!(m.timeline().unwrap().duration, before);
 }
+
+#[test]
+fn caption_split_time_then_text_preserves_time_and_undo() {
+    let m = MobileSession::new();
+    m.new_project("Caption splits".into(), 1080, 1920, 30).unwrap();
+    let response = m.execute("captions.add".into(), serde_json::json!({
+        "time": 0, "durationSeconds": 6.0, "text": "안녕하세요 오늘은 날씨가 좋습니다"
+    }).to_string()).unwrap();
+    let id = serde_json::from_str::<serde_json::Value>(&response).unwrap()["caption"].as_u64().unwrap();
+
+    let right = m.split_caption_time(id, 2 * SEC).unwrap();
+    let t = m.timeline().unwrap();
+    assert_eq!(t.captions.len(), 2);
+    assert_eq!(t.captions[0].duration, 2 * SEC);
+    assert_eq!(t.captions[1].start, 2 * SEC);
+    assert_eq!(t.captions[1].id, right);
+    assert_eq!(t.captions[0].text, t.captions[1].text, "time split keeps the text");
+
+    // Splitting the words of the left half reuses the already chosen 2 s cut.
+    assert_eq!(m.split_caption_text(id, "안녕하세요".into(), "오늘은 날씨가 좋습니다".into()).unwrap(), right);
+    let t = m.timeline().unwrap();
+    assert_eq!(t.captions.len(), 2);
+    assert_eq!(t.captions[0].text, "안녕하세요");
+    assert_eq!(t.captions[1].text, "오늘은 날씨가 좋습니다");
+    assert_eq!(t.captions[0].duration, 2 * SEC);
+    assert_eq!(t.captions[1].start, 2 * SEC);
+    m.undo();
+    let t = m.timeline().unwrap();
+    assert_eq!(t.captions.len(), 2);
+    assert_eq!(t.captions[0].text, t.captions[1].text, "text split is one undo step");
+    m.undo();
+    assert_eq!(m.timeline().unwrap().captions.len(), 1);
+}
+
+#[test]
+fn caption_split_by_text_alone_allocates_proportional_time() {
+    let m = MobileSession::new();
+    m.new_project("Caption splits".into(), 1080, 1920, 30).unwrap();
+    let response = m.execute("captions.add".into(), serde_json::json!({
+        "time": 0, "durationSeconds": 6.0, "text": "반갑습니다 모두"
+    }).to_string()).unwrap();
+    let id = serde_json::from_str::<serde_json::Value>(&response).unwrap()["caption"].as_u64().unwrap();
+    assert!(m.split_caption_text(id, "".into(), "모두".into()).is_err(), "both halves must have text");
+    m.split_caption_text(id, "반갑습니다".into(), "모두".into()).unwrap();
+    let t = m.timeline().unwrap();
+    assert_eq!(t.captions.len(), 2);
+    assert_eq!(t.captions[0].text, "반갑습니다");
+    assert_eq!(t.captions[1].text, "모두");
+    assert_eq!(t.captions[0].start, 0);
+    assert_eq!(t.captions[0].duration + t.captions[1].duration, 6 * SEC);
+    assert_eq!(t.captions[1].start, t.captions[0].duration);
+    assert!(t.captions[0].duration > t.captions[1].duration);
+    m.undo();
+    assert_eq!(m.timeline().unwrap().captions.len(), 1);
+}
