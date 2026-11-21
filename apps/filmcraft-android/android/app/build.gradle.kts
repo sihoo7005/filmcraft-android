@@ -13,6 +13,14 @@ val rustAbis: List<String> =
     providers.gradleProperty("filmcraft.abis").getOrElse("arm64-v8a,x86_64").split(',').map { it.trim() }.filter { it.isNotEmpty() }
 val minApi = 29
 
+// Termux uses Android-native arm64 host tools, rather than Google's x86_64 Linux NDK.
+val termuxArm64 = providers.gradleProperty("filmcraft.termux").orNull == "true"
+if (termuxArm64) {
+    require(rustAbis == listOf("arm64-v8a")) {
+        "Termux builds support only arm64-v8a; use -Pfilmcraft.abis=arm64-v8a"
+    }
+}
+
 // The app's version: gradle.properties' filmcraft.version, or the version tag's when the release
 // workflow builds a release. The version code follows from it (0.0.1-beta → 101, 0.0.1-beta.2 →
 // 102, 0.0.1 → 199, 0.1.0-beta → 10001), so a pre-release comes before its release and every
@@ -58,7 +66,7 @@ val cargoExecutable: String = run {
     providers.environmentVariable("CARGO").orNull ?: if (rustup.isFile) rustup.absolutePath else exe
 }
 
-/** Builds `libfilmcraft_android.so` (release profile) for each ABI with cargo-ndk. */
+/** Builds `libfilmcraft_android.so` with cargo-ndk on PCs or native cargo on Termux. */
 abstract class CargoNdkBuild : DefaultTask() {
     @get:Inject abstract val execOperations: ExecOperations
     @get:Input abstract val cargo: Property<String>
@@ -66,6 +74,7 @@ abstract class CargoNdkBuild : DefaultTask() {
     @get:Input abstract val ndkDir: Property<String>
     @get:Input abstract val abis: ListProperty<String>
     @get:Input abstract val apiLevel: Property<Int>
+    @get:Input abstract val termuxHost: Property<Boolean>
     @get:OutputDirectory abstract val outputDir: DirectoryProperty
 
     @TaskAction
@@ -80,18 +89,36 @@ abstract class CargoNdkBuild : DefaultTask() {
             "--remap-path-prefix=${File(workspaceDir.get()).absolutePath}=/filmcraft",
             "--remap-path-prefix=$cargoHome=/cargo",
         )
-        execOperations.exec {
-            workingDir(workspaceDir.get())
-            environment("ANDROID_NDK_HOME", ndkDir.get())
-            environment("CARGO_ENCODED_RUSTFLAGS", remap.joinToString("\u001f"))
-            commandLine(
-                listOf(cargo.get(), "ndk") + targets +
-                    listOf("--platform", apiLevel.get().toString(), "-o", out, "build", "--release", "-p", "filmcraft-android", "--lib"),
-            )
+        if (termuxHost.get()) {
+            // The Termux rustc/cargo host is itself aarch64-linux-android, so no
+            // Linux-x86_64 NDK clang or cargo-ndk wrapper is needed. Build the same
+            // cdylib and place it in the ABI directory expected by AGP and UniFFI.
+            execOperations.exec {
+                workingDir(workspaceDir.get())
+                environment("CARGO_ENCODED_RUSTFLAGS", remap.joinToString("\u001f"))
+                commandLine(cargo.get(), "build", "--release", "--target", "aarch64-linux-android",
+                    "-p", "filmcraft-android", "--lib")
+            }
+            val targetDir = System.getenv("CARGO_TARGET_DIR")?.let(::File)
+                ?: File(workspaceDir.get(), "target")
+            val built = File(targetDir, "aarch64-linux-android/release/libfilmcraft_android.so")
+            check(built.isFile) { "Rust library was not created: $built" }
+            val dir = File(out, "arm64-v8a")
+            dir.mkdirs()
+            built.copyTo(File(dir, built.name), overwrite = true)
+        } else {
+            execOperations.exec {
+                workingDir(workspaceDir.get())
+                environment("ANDROID_NDK_HOME", ndkDir.get())
+                environment("CARGO_ENCODED_RUSTFLAGS", remap.joinToString("\u001f"))
+                commandLine(
+                    listOf(cargo.get(), "ndk") + targets +
+                        listOf("--platform", apiLevel.get().toString(), "-o", out, "build", "--release", "-p", "filmcraft-android", "--lib"),
+                )
+            }
+            // cargo-ndk copies dependencies too, but only the application library ships.
+            File(out).walk().filter { it.isFile && it.name != "libfilmcraft_android.so" }.forEach { it.delete() }
         }
-        // cargo-ndk copies every shared library cargo left behind (dylib builds of a few
-        // dependencies); the app's library links them statically, so only it ships
-        File(out).walk().filter { it.isFile && it.name != "libfilmcraft_android.so" }.forEach { it.delete() }
     }
 }
 
@@ -213,6 +240,13 @@ android {
     compileSdk = 37
     ndkVersion = "29.0.14206865"
 
+    if (termuxArm64) {
+        // Don't invoke the x86_64 NDK llvm-strip executable on an ARM64 Termux host.
+        packaging {
+            jniLibs.keepDebugSymbols.add("**/*.so")
+        }
+    }
+
     defaultConfig {
         applicationId = "io.github.artcraftandroid.filmcraft"
         minSdk = minApi
@@ -268,9 +302,11 @@ androidComponents {
             description = "Builds libfilmcraft_android.so for $rustAbis"
             cargo.set(cargoExecutable)
             workspaceDir.set(cargoWorkspaceDir.absolutePath)
-            ndkDir.set(androidComponents.sdkComponents.ndkDirectory.map { it.asFile.absolutePath })
+            if (termuxArm64) ndkDir.set("")
+            else ndkDir.set(androidComponents.sdkComponents.ndkDirectory.map { it.asFile.absolutePath })
             abis.set(rustAbis)
             apiLevel.set(minApi)
+            termuxHost.set(termuxArm64)
             // cargo knows what changed
             outputs.upToDateWhen { false }
         }
