@@ -623,6 +623,38 @@ class EditorController(
 
     fun setCaptionText(id: ULong, text: String) = edit { setCaptionText(id, text) }
 
+    /** First cut the caption at the playhead, keeping both halves' words until assigned. */
+    fun splitCaptionAtPlayhead(id: ULong) {
+        val caption = timeline?.captions?.firstOrNull { it.id == id } ?: return
+        val at = TimelineMath.snap(playhead, rateNum, rateDen)
+        if (at - caption.start < frameTicks || caption.start + caption.duration - at < frameTicks) {
+            host.tell("Move the playhead inside the caption to split its time.")
+            return
+        }
+        stop()
+        scope.launch {
+            try {
+                engine.command { splitCaptionTime(id, at) }
+                refresh()
+                // Put the caret in the text and choose where the words should divide.
+                panel = Panel.TextInput(null, caption = id)
+            } catch (e: Exception) {
+                host.tell(e.userMessage)
+                refresh()
+            }
+        }
+    }
+
+    /** Split the text at the cursor. If time was already split, keep that boundary. */
+    fun splitCaptionAtText(id: ULong, before: String, after: String) {
+        if (before.isBlank() || after.isBlank()) {
+            host.tell("Place the cursor between two parts of the caption.")
+            return
+        }
+        panel = null
+        edit { splitCaptionText(id, before, after) }
+    }
+
     fun deleteCaption(id: ULong) {
         selectedCaption = null
         edit { deleteCaption(id) }
