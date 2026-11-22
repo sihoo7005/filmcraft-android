@@ -121,6 +121,8 @@ class EditorController(
     var typing by mutableStateOf("")
     /** A clip is being dragged or trimmed: tools wait. */
     var gesture by mutableStateOf(false)
+    /** Off by default: video drags leave captions at fixed timeline times. */
+    var moveCaptionsWithVideo by mutableStateOf(false)
 
     val media = MediaCache(engine, scope)
     private var renderer: Renderer? = null
@@ -537,8 +539,14 @@ class EditorController(
     fun shiftOrigin(delta: Long) = edit { shiftOrigin(delta) }
 
     fun trim(clip: ULong, head: Boolean, delta: Long) = edit { trim(clip, head, delta) }
-    fun reorder(clip: ULong, index: Int) = edit { reorder(clip, index.toUInt()) }
-    fun moveMainClip(clip: ULong, start: Long) = edit { moveMainClip(clip, start) }
+    fun reorder(clip: ULong, index: Int) {
+        val includeCaptions = moveCaptionsWithVideo
+        edit { if (includeCaptions) reorderWithCaptions(clip, index.toUInt()) else reorder(clip, index.toUInt()) }
+    }
+    fun moveMainClip(clip: ULong, start: Long) {
+        val includeCaptions = moveCaptionsWithVideo
+        edit { if (includeCaptions) moveMainClipWithCaptions(clip, start) else moveMainClip(clip, start) }
+    }
     fun move(clip: ULong, lane: Int, start: Long) = edit { moveClip(clip, lane, start) }
 
     fun setAspect(num: Int, den: Int) = edit { setAspect(num.toUInt(), den.toUInt()) }
