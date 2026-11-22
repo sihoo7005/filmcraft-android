@@ -975,6 +975,67 @@ fn seq_end(s: &Session) -> Tick {
     s.active_sequence().map(|q| q.duration()).unwrap_or(Tick::ZERO)
 }
 
+/// Apply a video drag and shift only captions whose start was inside that
+/// specific video before the drag. Captions on other footage are unaffected.
+/// The whole operation (or a collision rollback) is one undoable edit.
+pub(crate) fn drag_video_with_captions(
+    s: &mut Session, id: u64, start: Option<i64>, index: Option<u32>,
+) -> Result<(), MobileError> {
+    let (kind, track, video) = locate(s, id)?;
+    if !is_main(kind, track) {
+        return Err(MobileError::Command("Only main-track videos can move linked captions.".into()));
+    }
+    let selected: Vec<ClipId> = s
+        .active_sequence()
+        .ok_or(MobileError::NoSequence)?
+        .caption_tracks
+        .iter()
+        .flat_map(|t| &t.captions)
+        .filter(|c| c.start >= video.start && c.start < video.end())
+        .map(|c| c.id)
+        .collect();
+
+    s.edit_group("Move Video + Captions", |s| {
+        if let Some(start) = start {
+            move_main_clip(s, id, start).map_err(|e| other(e.to_string()))?;
+        } else if let Some(index) = index {
+            reorder(s, id, index).map_err(|e| other(e.to_string()))?;
+        } else {
+            return Err(other("Move Video + Captions: missing destination"));
+        }
+        if selected.is_empty() {
+            return Ok(());
+        }
+        let (_, after) = model::sequence(s).map_err(|e| other(e.to_string()))?;
+        let moved = model::find(after, ClipId(id)).ok_or_else(|| other("Dragged video disappeared"))?;
+        let delta = moved.clip.start - video.start;
+        if delta == Tick::ZERO {
+            return Ok(());
+        }
+        // edit_sequence validates the complete caption tracks and edit_group
+        // rolls the video movement back if a caption would overlap a neighbour.
+        s.edit_sequence("Move Captions", |q, _, _| {
+            for track in &mut q.caption_tracks {
+                if track.locked && track.captions.iter().any(|c| selected.contains(&c.id)) {
+                    return Err(other("The caption track is locked."));
+                }
+                for caption in &mut track.captions {
+                    if selected.contains(&caption.id) {
+                        caption.start = Tick(caption.start.0.checked_add(delta.0)
+                            .filter(|v| *v >= 0 && *v <= Tick::MAX.0)
+                            .ok_or_else(|| other("A linked caption would go outside the timeline."))?);
+                    }
+                }
+                track.sort();
+                track.check().map_err(|_| other("Linked captions would overlap other subtitles. Move canceled."))?;
+            }
+            Ok(())
+        })?;
+        Ok(())
+    })?;
+    Ok(())
+}
+
 /// Move the timeline's zero point without changing the spacing between any media.
 /// A positive shift moves the time origin right and all sequence events earlier.
 /// Every track (including linked audio), caption, transition, marker and in/out
