@@ -585,6 +585,17 @@ impl MobileSession {
         edits::reorder(&mut self.lock(), clip, index)
     }
 
+    /// Reorder a main video and move only subtitles that began within its old range.
+    /// Other captions remain at their chosen timeline times.
+    pub fn reorder_with_captions(&self, clip: u64, index: u32) -> Result<(), MobileError> {
+        edits::drag_video_with_captions(&mut self.lock(), clip, None, Some(index))
+    }
+
+    /// Move a main video and its own time-anchored subtitles, as one undoable edit.
+    pub fn move_main_clip_with_captions(&self, clip: u64, start: i64) -> Result<(), MobileError> {
+        edits::drag_video_with_captions(&mut self.lock(), clip, Some(start), None)
+    }
+
     /// Move the timeline's 0-second origin and rebase all timed content in one edit.
     /// Positive ticks move the origin right; returns the applied frame-snapped shift.
     pub fn shift_origin(&self, delta: i64) -> Result<i64, MobileError> {
