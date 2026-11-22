@@ -3,6 +3,16 @@
 This log tracks the Android app's development builds. The version shown in
 **Settings > About FilmCraft** comes from `apps/filmcraft-android/android/gradle.properties`.
 
+## 0.0.2-beta.5 (2026-11-22)
+
+- **Draggable timeline origin:** Long-press the blue handle at the ruler's `0:00` mark, then drag it horizontally to reposition time zero independently of video clips.
+- **Live preview:** The ruler labels move under the finger while video, audio and caption drawings stay in place. Nearby clip starts are magnetic snap targets.
+- **Real timeline rebase:** On release, shift clip positions on all video/audio lanes, captions, transitions, sequence markers, in/out marks and the work-area start together. Recalculate the playhead and project duration for playback and export.
+- **Safety:** Prevent moving any timed content before zero; moving the marker left can deliberately add leading space. This operation creates a single undoable timeline edit.
+- Add Rust regression tests for linked audio, captions, markers, in/out marks, clamping, undo and redo.
+
+Source change only; no APK build or device test was performed.
+
 ## 0.0.2-beta.4 (2026-11-22)
 
 - **Video timeline:** Fix the case where a long-pressed video appears to move horizontally during the drag but snaps back after release.
