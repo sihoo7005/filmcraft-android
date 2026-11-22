@@ -535,6 +535,7 @@ class EditorController(
 
     fun trim(clip: ULong, head: Boolean, delta: Long) = edit { trim(clip, head, delta) }
     fun reorder(clip: ULong, index: Int) = edit { reorder(clip, index.toUInt()) }
+    fun moveMainClip(clip: ULong, start: Long) = edit { moveMainClip(clip, start) }
     fun move(clip: ULong, lane: Int, start: Long) = edit { moveClip(clip, lane, start) }
 
     fun setAspect(num: Int, den: Int) = edit { setAspect(num.toUInt(), den.toUInt()) }
