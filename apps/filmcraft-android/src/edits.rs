@@ -918,6 +918,27 @@ pub(crate) fn reorder(s: &mut Session, id: u64, index: u32) -> Result<(), Mobile
     }
     s.edit_group("Reorder", |s| {
         let locked = unlock_others(s)?;
+        // The engine's insert move also ripples sync-locked caption tracks.
+        // A video drag must change only the video order (and linked sound),
+        // not the user's separately timed subtitles.
+        let captions: Vec<_> = s
+            .active_sequence()
+            .ok_or(EngineError::NoSequence)?
+            .caption_tracks
+            .iter()
+            .filter(|t| t.sync_lock)
+            .map(|t| t.id)
+            .collect();
+        if !captions.is_empty() {
+            s.edit_sequence("Reorder", |q, _, _| {
+                for t in &mut q.caption_tracks {
+                    if captions.contains(&t.id) {
+                        t.sync_lock = false;
+                    }
+                }
+                Ok(())
+            })?;
+        }
         let r = (|| {
             // park the clip past the end, close the gap it left, then insert it at its new place
             let park = seq_end(s) + Tick::from_seconds_f64(1.0);
@@ -929,8 +950,23 @@ pub(crate) fn reorder(s: &mut Session, id: u64, index: u32) -> Result<(), Mobile
             s.execute("timeline.move", json!({"moves": [{"clip": c.id.0, "track": "V1", "time": at.0}], "insert": true}))?;
             Ok(())
         })();
-        relock(s, &locked)?;
-        r
+        // Restore sync-lock settings even if the move fails.
+        let restored = if captions.is_empty() {
+            Ok(())
+        } else {
+            s.edit_sequence("Reorder", |q, _, _| {
+                for t in &mut q.caption_tracks {
+                    if captions.contains(&t.id) {
+                        t.sync_lock = true;
+                    }
+                }
+                Ok(())
+            })
+        };
+        let relocked = relock(s, &locked);
+        r?;
+        restored?;
+        relocked
     })?;
     Ok(())
 }
