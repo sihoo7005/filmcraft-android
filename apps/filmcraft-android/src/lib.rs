@@ -585,6 +585,12 @@ impl MobileSession {
         self.main_edit(|s| edits::reorder(s, clip, index))
     }
 
+    /// Move the timeline's 0-second origin and rebase all timed content in one edit.
+    /// Positive ticks move the origin right; returns the applied frame-snapped shift.
+    pub fn shift_origin(&self, delta: i64) -> Result<i64, MobileError> {
+        edits::shift_origin(&mut self.lock(), delta)
+    }
+
     /// Move a main-track video into an unoccupied time range, taking linked audio with it.
     pub fn move_main_clip(&self, clip: u64, start: i64) -> Result<(), MobileError> {
         self.main_edit(|s| edits::move_main_clip(s, clip, start))
