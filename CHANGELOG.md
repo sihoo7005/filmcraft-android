@@ -3,6 +3,15 @@
 This log tracks the Android app's development builds. The version shown in
 **Settings > About FilmCraft** comes from `apps/filmcraft-android/android/gradle.properties`.
 
+## 0.0.2-beta.3 (2026-11-22)
+
+- **Video timeline:** Keep main-track clip drag previews on the same horizontal lane; overlay and audio clips still support vertical lane moves.
+- **Reordering:** Fix target-position calculations using clips' original centres. A long press without horizontal movement must not unexpectedly reorder a clip.
+- **Feedback:** Show an insertion marker when a dragged main-track clip crosses another clip's reorder threshold.
+- **Expected behavior:** The main video lane remains a gap-free, reorder-only track. One clip alone has no reorder destination.
+
+Source change only; the APK has not been built or tested on a device.
+
 ## 0.0.2-beta.2 (2026-11-22)
 
 - **Timeline:** Fix the preview when dragging a video's left trim handle. Thumbnails and audio waveform stay anchored while the visible edge changes; the duration badge previews the resulting length.
