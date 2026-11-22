@@ -478,6 +478,30 @@ fn main_video_moves_to_an_empty_gap_with_linked_audio_and_undo() {
 }
 
 #[test]
+fn dragging_a_video_does_not_drag_or_delete_its_timed_caption() {
+    let (m, _d, ids) = two_clips();
+    m.execute("captions.add".into(), json!({"seconds": 3.0, "durationSeconds": 1.0}).to_string()).unwrap();
+    let before = m.timeline().unwrap().captions;
+    assert_eq!(before.len(), 1);
+
+    // Free move: linked source sound follows its video but the separate subtitle stays.
+    m.move_main_clip(ids[1], 7 * SEC).unwrap();
+    assert_eq!(clip(&m, ids[1]).start, 7 * SEC);
+    assert_eq!(m.timeline().unwrap().captions, before);
+    m.undo();
+    assert_eq!(clip(&m, ids[1]).start, 2 * SEC);
+    assert_eq!(m.timeline().unwrap().captions, before);
+
+    // Reorder via video drag: the insert-mode engine operation must not ripple
+    // the caption track, regardless of its sync-lock setting.
+    m.reorder(ids[1], 0).unwrap();
+    assert_eq!(clip(&m, ids[1]).start, 0);
+    assert_eq!(m.timeline().unwrap().captions, before);
+    m.undo();
+    assert_eq!(m.timeline().unwrap().captions, before);
+}
+
+#[test]
 fn moving_timeline_zero_rebases_all_tracks_captions_marks_and_playhead_in_one_undo_step() {
     let (m, _d, ids) = two_clips();
     // Create five seconds of leading silence while retaining two separated videos.
@@ -635,7 +659,7 @@ fn captions_follow_the_footage_they_were_made_from() {
     assert_eq!(at(&m), vec![2 * SEC + SEC / 2], "half a second trimmed off its head");
     m.undo();
     m.reorder(ids[1], 0).unwrap();
-    assert_eq!(at(&m), vec![SEC], "moved first");
+    assert_eq!(at(&m), vec![3 * SEC], "drag-reordering video leaves subtitles at their chosen times");
     m.undo();
     m.delete_clip(ids[1]).unwrap();
     assert!(at(&m).is_empty(), "its footage is gone");
