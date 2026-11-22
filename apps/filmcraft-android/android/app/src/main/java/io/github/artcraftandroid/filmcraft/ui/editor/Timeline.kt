@@ -436,10 +436,32 @@ private class Geometry(
         )
     }
 
+    /** Main-track destination is free if no other video would be overwritten. */
+    fun mainCanPlace(c: ClipInfo, start: Long): Boolean {
+        val others = t.lanes.getOrNull(mainIndex)?.clips.orEmpty().filter { it.id != c.id }
+        return TimelineMath.mainClipCanFit(
+            start, c.duration, others.map { it.start }, others.map { it.start + it.duration },
+        )
+    }
+
+    /** The nearest frame start for a main video dropped after a horizontal drag. */
+    fun mainDropStart(c: ClipInfo, dx: Float, rateNum: Long, rateDen: Long): Long {
+        val start = (c.start + TimelineMath.ticksFor(dx, pxPerSecond)).coerceAtLeast(0L)
+        val halfFrame = TimelineMath.tickOfFrame(1L, rateNum, rateDen) / 2L
+        return TimelineMath.snap(start + halfFrame, rateNum, rateDen)
+    }
+
     /** A picked-up clip let go after moving by (dx, dy). */
     fun drop(e: EditorController, c: ClipInfo, dx: Float, dy: Float) {
         val lane = t.lanes.firstOrNull { l -> l.clips.any { it.id == c.id } } ?: return
         if (lane.kind == LaneKind.MAIN) {
+            val target = mainDropStart(c, dx, e.rateNum, e.rateDen)
+            if (target == c.start) return
+            if (mainCanPlace(c, target)) {
+                e.moveMainClip(c.id, target)
+                return
+            }
+            // Occupied time: change order instead of overwriting another video.
             val slot = mainReorderSlot(c, dx)
             val from = lane.clips.indexOfFirst { it.id == c.id }
             if (slot != from) e.reorder(c.id, slot)
@@ -532,14 +554,23 @@ private fun DrawScope.drawTimeline(
         if (move != null) {
             for ((i, lane) in g.t.lanes.withIndex()) {
                 val c = lane.clips.firstOrNull { it.id == move.clip } ?: continue
-                val r = g.rectOf(i, c).translate(move.dx, if (lane.kind == LaneKind.MAIN) 0f else move.dy)
+                val r = if (lane.kind == LaneKind.MAIN) {
+                    val target = g.mainDropStart(c, move.dx, ed.rateNum, ed.rateDen)
+                    val from = lane.clips.indexOfFirst { it.id == c.id }
+                    val slot = g.mainReorderSlot(c, move.dx)
+                    // Avoid advertising a move when the clip would collide and
+                    // its reorder position has not changed.
+                    val shownDx = if (!g.mainCanPlace(c, target) && slot == from) 0f else move.dx
+                    g.rectOf(i, c).translate(shownDx, 0f)
+                } else g.rectOf(i, c).translate(move.dx, move.dy)
                 drawClip(ed, lane, c, r, true, dp, measurer, alpha = 0.85f)
                 if (lane.kind == LaneKind.MAIN) {
                     // Indicate the insertion boundary without shifting the other
                     // clips until the drag is committed.
                     val from = lane.clips.indexOfFirst { it.id == c.id }
                     val slot = g.mainReorderSlot(c, move.dx)
-                    if (slot != from) {
+                    val target = g.mainDropStart(c, move.dx, ed.rateNum, ed.rateDen)
+                    if (!g.mainCanPlace(c, target) && slot != from) {
                         val others = lane.clips.filter { it.id != c.id }
                         val at = others.getOrNull(slot)?.start
                             ?: others.lastOrNull()?.let { it.start + it.duration }
