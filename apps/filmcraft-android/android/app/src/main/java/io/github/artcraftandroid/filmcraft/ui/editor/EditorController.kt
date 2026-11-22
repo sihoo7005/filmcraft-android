@@ -533,6 +533,9 @@ class EditorController(
 
     suspend fun maxTransition(from: ULong?, to: ULong?): Double = runCatching { engine.command { maxTransition(from, to) } }.getOrDefault(5.0)
 
+    /** Shift the actual timeline origin, all tracks, captions and playback times together. */
+    fun shiftOrigin(delta: Long) = edit { shiftOrigin(delta) }
+
     fun trim(clip: ULong, head: Boolean, delta: Long) = edit { trim(clip, head, delta) }
     fun reorder(clip: ULong, index: Int) = edit { reorder(clip, index.toUInt()) }
     fun moveMainClip(clip: ULong, start: Long) = edit { moveMainClip(clip, start) }
