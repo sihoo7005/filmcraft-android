@@ -191,14 +191,25 @@ object TimelineMath {
         return tops
     }
 
-    /** The insertion slot (0…n) a dragged main-track clip would take, from the finger's time. */
+    /** The insertion slot (0…n) before which the dragged clip would be placed. */
     fun slotAt(t: Long, starts: List<Long>, ends: List<Long>): Int {
         for (i in starts.indices) {
-            val mid = (starts[i] + ends[i]) / 2
+            val mid = starts[i] + (ends[i] - starts[i]) / 2
             if (t < mid) return i
         }
         return starts.size
     }
+
+    /**
+     * Main-track clips move by reordering, not by creating gaps. Compare the
+     * dragged clip's moved centre with the other clips' ORIGINAL centres.
+     * Compaction before calculating the slot can otherwise reorder a clip when
+     * the user simply long-presses and releases without moving it.
+     */
+    fun mainReorderSlot(
+        clipStart: Long, clipDuration: Long, dragTicks: Long,
+        otherStarts: List<Long>, otherEnds: List<Long>,
+    ): Int = slotAt(clipStart + clipDuration / 2 + dragTicks, otherStarts, otherEnds)
 
     /** Whether two times are within [px] pixels at [pxPerSecond]. */
     fun near(a: Long, b: Long, px: Float, pxPerSecond: Float): Boolean = abs((a - b).toDouble() / TPS * pxPerSecond) <= px
