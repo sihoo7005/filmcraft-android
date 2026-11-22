@@ -67,7 +67,6 @@ import io.github.artcraftandroid.filmcraft.ui.Inter
 import io.github.artcraftandroid.filmcraft.ui.LucideIcons
 import io.github.artcraftandroid.filmcraft.ui.glyph
 import kotlin.math.abs
-import kotlin.math.floor
 import kotlin.math.hypot
 import kotlin.math.max
 import kotlin.math.min
