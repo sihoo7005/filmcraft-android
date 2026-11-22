@@ -459,6 +459,38 @@ fn reordering_moves_a_main_track_clip_and_keeps_the_track_gapless() {
 }
 
 #[test]
+fn main_video_moves_to_an_empty_gap_with_linked_audio_and_undo() {
+    let (m, _d, ids) = two_clips();
+    m.move_main_clip(ids[1], 7 * SEC).unwrap();
+
+    assert_eq!(clip(&m, ids[0]).start, 0, "the first video stays where it was");
+    assert_eq!(clip(&m, ids[1]).start, 7 * SEC, "the dragged video keeps its new start");
+    {
+        let guard = m.lock();
+        let q = guard.active_sequence().unwrap();
+        let video = q.video_tracks[0].items.iter().find(|v| v.id.0 == ids[1]).unwrap();
+        let link = video.link.expect("video and sound were linked when placed");
+        let audio = q.audio_tracks.iter().flat_map(|t| t.items.iter()).find(|a| a.link == Some(link)).unwrap();
+        assert_eq!(audio.start.0, 7 * SEC, "linked audio follows the video");
+    }
+    m.undo();
+    assert_eq!(clip(&m, ids[1]).start, 2 * SEC, "move is one undoable edit");
+}
+
+#[test]
+fn a_single_main_video_can_move_right_and_collisions_do_not_delete_footage() {
+    let (m, _d, ids) = two_clips();
+    assert!(m.move_main_clip(ids[0], SEC).is_err(), "moving across another video must not overwrite it");
+    assert_eq!(clip(&m, ids[0]).start, 0);
+    assert_eq!(clip(&m, ids[1]).start, 2 * SEC);
+    m.delete_clip(ids[1]).unwrap();
+    m.move_main_clip(ids[0], SEC).unwrap();
+    assert_eq!(clip(&m, ids[0]).start, SEC, "even one video can be positioned freely");
+    m.undo();
+    assert_eq!(clip(&m, ids[0]).start, 0);
+}
+
+#[test]
 fn blank_clips_and_aspect_ratios() {
     let (m, _d, ids) = two_clips();
     m.set_playhead(SEC);
