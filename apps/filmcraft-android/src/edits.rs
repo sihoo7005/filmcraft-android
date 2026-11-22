@@ -939,6 +939,93 @@ fn seq_end(s: &Session) -> Tick {
     s.active_sequence().map(|q| q.duration()).unwrap_or(Tick::ZERO)
 }
 
+/// Move the timeline's zero point without changing the spacing between any media.
+/// A positive shift moves the time origin right and all sequence events earlier.
+/// Every track (including linked audio), caption, transition, marker and in/out
+/// point is rebased in one undoable edit so playback and export agree.
+pub(crate) fn shift_origin(s: &mut Session, requested: i64) -> Result<i64, MobileError> {
+    if requested == 0 {
+        return Ok(0);
+    }
+    let (_, seq) = model::sequence(s)?;
+    let (mut earliest, mut latest) = (i64::MAX, 0_i64);
+    let mut include = |start: Tick, end: Tick| {
+        earliest = earliest.min(start.0);
+        latest = latest.max(end.0);
+    };
+    for tr in seq.all_tracks() {
+        for item in &tr.items {
+            include(item.start, item.end());
+        }
+        for effect in &tr.transitions {
+            include(effect.start, effect.end());
+        }
+    }
+    for tr in &seq.caption_tracks {
+        for caption in &tr.captions {
+            include(caption.start, caption.end());
+        }
+    }
+    for marker in &seq.markers {
+        include(marker.start, marker.start + marker.duration);
+    }
+    for mark in [seq.mark_in, seq.mark_out, seq.split.video_in, seq.split.video_out, seq.split.audio_in, seq.split.audio_out].into_iter().flatten() {
+        include(mark, mark);
+    }
+    if let Some(area) = seq.work_area {
+        include(area.start, area.end());
+    }
+    if earliest == i64::MAX {
+        return Ok(0);
+    }
+    // The leftmost item/marker is a hard stop, preventing negative timeline
+    // positions. Moving zero to the left is limited by supported Tick bounds.
+    let right = earliest.max(0);
+    let left = Tick::MAX.0.saturating_sub(latest).max(0);
+    let wanted = requested.clamp(-left, right);
+    let magnitude = s.sequence_rate().snap_nearest(Tick(wanted.saturating_abs())).0;
+    let shift = (magnitude * wanted.signum()).clamp(-left, right);
+    if shift == 0 {
+        return Ok(0);
+    }
+
+    let change = Tick(shift);
+    s.edit_sequence("Move Timeline Zero", |q, _, _| {
+        for track in q.all_tracks_mut() {
+            for item in &mut track.items {
+                item.start -= change;
+            }
+            for transition in &mut track.transitions {
+                transition.start -= change;
+            }
+        }
+        for track in &mut q.caption_tracks {
+            for caption in &mut track.captions {
+                caption.start -= change;
+            }
+        }
+        for marker in &mut q.markers {
+            marker.start -= change;
+        }
+        for mark in [&mut q.mark_in, &mut q.mark_out, &mut q.split.video_in, &mut q.split.video_out, &mut q.split.audio_in, &mut q.split.audio_out] {
+            if let Some(t) = mark.as_mut() {
+                *t -= change;
+            }
+        }
+        if let Some(range) = q.work_area.as_mut() {
+            range.start -= change;
+        }
+        q.check().map_err(EngineError::Other)?;
+        Ok(())
+    })?;
+    // Keep the preview on the same footage when possible; no negative
+    // playhead positions exist, so a shift past it clamps to zero.
+    let duration = s.active_sequence().map(|q| q.duration().0).unwrap_or(0);
+    let playhead = s.playhead().0.saturating_sub(shift).clamp(0, duration);
+    s.set_playhead(Tick(playhead));
+    Ok(shift)
+}
+
 /// Move a main-track video to a free position without overwriting other clips.
 /// Overlapping destinations use the separate reorder operation instead.
 pub(crate) fn move_main_clip(s: &mut Session, id: u64, start: i64) -> Result<(), MobileError> {
