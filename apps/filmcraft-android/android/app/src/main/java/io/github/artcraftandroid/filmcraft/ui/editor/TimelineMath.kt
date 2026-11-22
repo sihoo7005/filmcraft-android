@@ -211,6 +211,10 @@ object TimelineMath {
         otherStarts: List<Long>, otherEnds: List<Long>,
     ): Int = slotAt(clipStart + clipDuration / 2 + dragTicks, otherStarts, otherEnds)
 
+    /** True if a main-track clip can move here without covering another video. */
+    fun mainClipCanFit(start: Long, duration: Long, otherStarts: List<Long>, otherEnds: List<Long>): Boolean =
+        otherStarts.indices.all { i -> start >= otherEnds[i] || start + duration <= otherStarts[i] }
+
     /** Whether two times are within [px] pixels at [pxPerSecond]. */
     fun near(a: Long, b: Long, px: Float, pxPerSecond: Float): Boolean = abs((a - b).toDouble() / TPS * pxPerSecond) <= px
 
