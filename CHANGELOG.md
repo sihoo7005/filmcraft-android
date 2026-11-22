@@ -3,6 +3,15 @@
 This log tracks the Android app's development builds. The version shown in
 **Settings > About FilmCraft** comes from `apps/filmcraft-android/android/gradle.properties`.
 
+## 0.0.2-beta.6 (2026-11-22)
+
+- **Independent subtitle timing:** Moving a video horizontally into an empty gap no longer drags its captions along. Captions keep their existing start/end times.
+- **Video reorder:** Temporarily disable caption-track sync-lock ripple during video reordering so dragging across another clip does not shift or split subtitles.
+- **Linked source audio:** Continue moving a video's own linked audio with it; this is separate from subtitle timing.
+- Add regression checks for both move and reorder with caption positions preserved across undo.
+
+Source change only; no APK build or device testing was performed.
+
 ## 0.0.2-beta.5 (2026-11-22)
 
 - **Draggable timeline origin:** Long-press the blue handle at the ruler's `0:00` mark, then drag it horizontally to reposition time zero independently of video clips.
