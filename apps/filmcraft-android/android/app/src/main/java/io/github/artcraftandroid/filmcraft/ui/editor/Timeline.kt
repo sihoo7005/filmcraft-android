@@ -83,6 +83,9 @@ private data class MoveDrag(val clip: ULong, val dx: Float, val dy: Float)
 /** A caption timing edit preview, committed only when the finger lifts. */
 private data class CaptionTimingDrag(val caption: ULong, val start: Long, val end: Long)
 
+/** Preview for dragging the ruler's zero point; clips stay visually anchored. */
+private data class OriginDrag(val delta: Long)
+
 /** The timeline: a ruler, the lanes and the fixed playhead in the middle. */
 @Composable
 fun Timeline(ed: EditorController, modifier: Modifier = Modifier, compact: Boolean = false) {
@@ -93,6 +96,7 @@ fun Timeline(ed: EditorController, modifier: Modifier = Modifier, compact: Boole
     var trim by remember { mutableStateOf<TrimDrag?>(null) }
     var move by remember { mutableStateOf<MoveDrag?>(null) }
     var captionDrag by remember { mutableStateOf<CaptionTimingDrag?>(null) }
+    var originDrag by remember { mutableStateOf<OriginDrag?>(null) }
     var scrollY by remember { mutableStateOf(0f) }
     val edState by rememberUpdatedState(ed)
     BoxWithConstraints(modifier.background(Fc.Black).testTag("editor_timeline")) {
@@ -145,6 +149,26 @@ fun Timeline(ed: EditorController, modifier: Modifier = Modifier, compact: Boole
                                 val remaining = longPress - (android.os.SystemClock.uptimeMillis() - down.uptimeMillis).coerceAtLeast(0)
                                 val ev = withTimeoutOrNull(maxOf(remaining, 1L)) { awaitPointerEvent() }
                                 if (ev == null) {
+                                    if (g.originHandleAt(start)) {
+                                        decided = true
+                                        e.gesture = true
+                                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                        var dx = 0f
+                                        originDrag = OriginDrag(0L)
+                                        while (true) {
+                                            val m = awaitPointerEvent()
+                                            val c = m.changes.firstOrNull { it.id == down.id } ?: break
+                                            if (!c.pressed) break
+                                            dx += c.positionChange().x
+                                            c.consume()
+                                            originDrag = OriginDrag(g.originDelta(dx, e.rateNum, e.rateDen))
+                                        }
+                                        val done = originDrag
+                                        originDrag = null
+                                        e.gesture = false
+                                        if (done != null && done.delta != 0L) e.shiftOrigin(done.delta)
+                                        break
+                                    }
                                     // A long press on a caption moves it, or trims the edge
                                     // the finger started near. One edit is saved on release.
                                     if (hitCaption != null) {
@@ -254,7 +278,7 @@ fun Timeline(ed: EditorController, modifier: Modifier = Modifier, compact: Boole
                         }
                     },
             ) {
-                drawTimeline(geo, ed, measurer, trim, move, captionDrag)
+                drawTimeline(geo, ed, measurer, trim, move, captionDrag, originDrag?.delta ?: 0L)
             }
             // the add-media button, at the right end of the main track
             val mainTop = geo.mainTop
@@ -319,6 +343,30 @@ private class Geometry(
 
     fun x(time: Long) = TimelineMath.xOf(time, playhead, centerX, pxPerSecond)
     fun time(x: Float) = TimelineMath.timeAt(x, playhead, centerX, pxPerSecond)
+
+    /** The ruler's zero marker is draggable after a long press, unlike normal scrubbing. */
+    fun originHandleAt(p: Offset): Boolean =
+        p.y in 0f..rulerH && abs(p.x - x(0L)) <= 22f * dp
+
+    /** Maximum allowed positive origin shift, based on visible timed content. */
+    private fun maxOriginShift(): Long {
+        val content = t.lanes.flatMap { lane -> lane.clips.map { it.start } } +
+            t.captions.map { it.start } +
+            t.transitions.map { it.start }
+        return content.minOrNull()?.coerceAtLeast(0L) ?: 0L
+    }
+
+    /** Snap the zero marker to frames and nearby clip starts without crossing content. */
+    fun originDelta(dx: Float, num: Long, den: Long): Long {
+        val maxShift = maxOriginShift()
+        val frame = TimelineMath.tickOfFrame(1L, num, den).coerceAtLeast(1L)
+        val count = (TimelineMath.ticksFor(dx, pxPerSecond).toDouble() / frame).roundToLong()
+        val value = TimelineMath.tickOfFrame(count, num, den).coerceAtMost(maxShift)
+        val snap = t.lanes.flatMap { lane -> lane.clips.map { it.start } }
+            .filter { it >= 0L && it <= maxShift }
+            .minByOrNull { abs((it - value).toDouble()) }
+        return if (snap != null && TimelineMath.near(snap, value, 14f * dp, pxPerSecond)) snap else value
+    }
 
     fun rectOf(laneIndex: Int, c: ClipInfo): Rect {
         val top = tops.getOrElse(laneIndex) { 0f }
@@ -493,6 +541,7 @@ private class Geometry(
 private fun DrawScope.drawTimeline(
     g: Geometry, ed: EditorController, measurer: androidx.compose.ui.text.TextMeasurer,
     trim: TrimDrag?, move: MoveDrag?, captionDrag: CaptionTimingDrag?,
+    originShift: Long,
 ) {
     val dp = g.dp
     @Suppress("UNUSED_VARIABLE") val version = ed.media.version
@@ -589,7 +638,7 @@ private fun DrawScope.drawTimeline(
         drawRect(Brush.verticalGradient(listOf(Fc.Black, Color.Transparent), startY = g.rulerH, endY = g.rulerH + shade), Offset(0f, g.rulerH), Size(size.width, shade))
         drawRect(Brush.verticalGradient(listOf(Color.Transparent, Fc.Black), startY = size.height - shade, endY = size.height), Offset(0f, size.height - shade), Size(size.width, shade))
     }
-    drawRuler(g, ed, measurer)
+    drawRuler(g, ed, measurer, originShift)
     // the playhead (none over an empty timeline)
     if (ed.duration > 0) {
         // from just above the lanes to the timeline's bottom edge (a canvas doesn't clip)
@@ -792,7 +841,7 @@ private fun DrawScope.drawWave(ed: EditorController, c: ClipInfo, left: Float, r
 /** How much of a waveform lane a full-scale peak fills (after the square root). */
 private const val WAVE_SCALE = 0.65f
 
-private fun DrawScope.drawRuler(g: Geometry, ed: EditorController, measurer: androidx.compose.ui.text.TextMeasurer) {
+private fun DrawScope.drawRuler(g: Geometry, ed: EditorController, measurer: androidx.compose.ui.text.TextMeasurer, originShift: Long) {
     val dp = g.dp
     val h = 15 * dp
     drawRect(Fc.Black, Offset.Zero, Size(size.width, g.rulerH))
@@ -800,19 +849,21 @@ private fun DrawScope.drawRuler(g: Geometry, ed: EditorController, measurer: and
     val sample = measurer.measure("00:00", labelStyle).size.width.toFloat()
     val step = TimelineMath.rulerStep(g.pxPerSecond, sample * 1.35f, ed.rateNum, ed.rateDen)
     val stepTicks = step.ticks.coerceAtLeast(1)
-    val tStart = g.time(0f).coerceAtLeast(0)
-    val tEnd = g.time(size.width)
+    // During a zero-point drag the ruler slides, but video/audio/caption pixels
+    // do not. The underlying times are rebased atomically on finger release.
+    val tStart = (g.time(0f) - originShift).coerceAtLeast(0L)
+    val tEnd = g.time(size.width) - originShift
     var t = (tStart / stepTicks) * stepTicks
     while (t <= tEnd) {
-        val x = g.x(t)
+        val x = g.x(t + originShift)
         val lay = measurer.measure(TimelineMath.rulerLabel(t, step, ed.rateNum, ed.rateDen), labelStyle)
         drawText(lay, topLeft = Offset(x - lay.size.width / 2f, (h - lay.size.height) / 2f))
-        val half = g.x(t + stepTicks / 2)
+        val half = g.x(t + stepTicks / 2 + originShift)
         drawCircle(Fc.RulerTick, 1.2f * dp, Offset(half, h / 2f))
         t += stepTicks
     }
     // the playhead's time, centred on a black box
-    val now = timecode(ed.playhead, ed.rateNum, ed.rateDen, Color.White, true)
+    val now = timecode((ed.playhead - originShift).coerceAtLeast(0L), ed.rateNum, ed.rateDen, Color.White, true)
     val nowLay = measurer.measure(now, TextStyle(fontFamily = Inter, fontSize = 14.sp, fontFeatureSettings = "tnum"))
     val nx = g.centerX - nowLay.size.width / 2f
     val pad = 4 * dp
@@ -821,7 +872,21 @@ private fun DrawScope.drawRuler(g: Geometry, ed: EditorController, measurer: and
     drawRect(Brush.horizontalGradient(listOf(Fc.Black, Color.Transparent), startX = nx + nowLay.size.width + pad, endX = nx + nowLay.size.width + pad + 6 * dp), Offset(nx + nowLay.size.width + pad, 0f), Size(6 * dp, h))
     drawText(nowLay, topLeft = Offset(nx, (h - nowLay.size.height) / 2f))
     // the total length at the end
-    val total = timecode(ed.duration, ed.rateNum, ed.rateDen, Fc.RulerLabel, true)
+    // A distinct blue handle remains visible even when the 0:00 tick overlaps
+    // the fixed centre playhead label.
+    val zero = g.x(originShift)
+    if (zero in (-15f * dp)..(size.width + 15f * dp)) {
+        val y = g.rulerH - 3f * dp
+        val marker = Path().apply {
+            moveTo(zero - 8f * dp, y - 14f * dp)
+            lineTo(zero + 8f * dp, y - 14f * dp)
+            lineTo(zero, y)
+            close()
+        }
+        drawPath(marker, Fc.Accent)
+    }
+    val previewDuration = (ed.duration - originShift).coerceAtLeast(0L)
+    val total = timecode(previewDuration, ed.rateNum, ed.rateDen, Fc.RulerLabel, true)
     val totLay = measurer.measure(total, TextStyle(fontFamily = Inter, fontSize = 14.sp, fontWeight = FontWeight.Bold, fontFeatureSettings = "tnum"))
     val tx = size.width - totLay.size.width - pad
     drawRect(Fc.Black, Offset(tx - pad, 0f), Size(totLay.size.width + 2 * pad, h))
