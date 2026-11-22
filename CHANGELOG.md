@@ -3,6 +3,15 @@
 This log tracks the Android app's development builds. The version shown in
 **Settings > About FilmCraft** comes from `apps/filmcraft-android/android/gradle.properties`.
 
+## 0.0.2-beta.7 (2026-11-22)
+
+- **Video-caption follow toggle:** Select a video on the main track and tap the `Captions off/on` tool to control whether captions move with that video. The default is off, so captions stay at their chosen times.
+- **Selective linking:** When enabled, only captions whose start time was inside the grabbed video's original time range follow the video's horizontal move or reorder. Other captions remain fixed; linked source audio retains its existing behavior.
+- **Safe, undoable edits:** Apply video and caption movement as a single undo step. If a linked caption would overlap another caption, reject and roll back the entire drag rather than truncating or losing text.
+- Add Rust regression cases for enabled moves and reorders, unrelated caption isolation, collision rollback, undo and redo.
+
+This is an editor toggle rather than a persisted project-level caption association. Source change only; no APK build or device test was performed.
+
 ## 0.0.2-beta.6 (2026-11-22)
 
 - **Independent subtitle timing:** Moving a video horizontally into an empty gap no longer drags its captions along. Captions keep their existing start/end times.
