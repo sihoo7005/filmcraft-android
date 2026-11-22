@@ -122,6 +122,19 @@ class TimelineMathTest {
     }
 
     @Test
+    fun aVideoCanBeMovedIntoAnEmptyGapWithoutCoveringOtherVideos() {
+        val second = TPS
+        // Existing video is 0-2 s. A 3-second clip can be placed at 5 s,
+        // but not at 1 s or 1.5 s where it would overwrite other footage.
+        val starts = listOf(0L)
+        val ends = listOf(2L * second)
+        assertTrue(TimelineMath.mainClipCanFit(5L * second, 3L * second, starts, ends))
+        assertTrue(TimelineMath.mainClipCanFit(2L * second, 3L * second, starts, ends))
+        assertTrue(!TimelineMath.mainClipCanFit(1L * second, 3L * second, starts, ends))
+        assertTrue(TimelineMath.mainClipCanFit(second, 3L * second, emptyList(), emptyList()))
+    }
+
+    @Test
     fun captionMoveAndEdgeTrimsAreClampedToNeighbours() {
         val a = 2 * TPS
         val b = 5 * TPS
