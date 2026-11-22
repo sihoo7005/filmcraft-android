@@ -939,6 +939,54 @@ fn seq_end(s: &Session) -> Tick {
     s.active_sequence().map(|q| q.duration()).unwrap_or(Tick::ZERO)
 }
 
+/// Move a main-track video to a free position without overwriting other clips.
+/// Overlapping destinations use the separate reorder operation instead.
+pub(crate) fn move_main_clip(s: &mut Session, id: u64, start: i64) -> Result<(), MobileError> {
+    let (kind, track, c) = locate(s, id)?;
+    if !is_main(kind, track) {
+        return Err(MobileError::Command("Only main-track clips can use this move.".into()));
+    }
+    let start = s.sequence_rate().snap_nearest(ticks(start));
+    if start == c.start {
+        return Ok(());
+    }
+    let end = start + c.duration;
+    let delta = start - c.start;
+    {
+        let (_, seq) = model::sequence(s)?;
+        let main = seq.video_tracks.first().ok_or_else(|| MobileError::Command("Missing main video track.".into()))?;
+        if !free(&main.items, start, end, Some(c.id)) {
+            return Err(MobileError::Command("That position overlaps another video. Reorder it instead.".into()));
+        }
+        if let Some(link) = c.link {
+            let linked_ids: std::collections::HashSet<_> = seq
+                .all_tracks()
+                .flat_map(|tr| tr.items.iter())
+                .filter(|it| it.link == Some(link))
+                .map(|it| it.id)
+                .collect();
+            for tr in seq.all_tracks() {
+                for partner in tr.items.iter().filter(|it| it.id != c.id && linked_ids.contains(&it.id)) {
+                    if tr.locked {
+                        return Err(MobileError::Command("The linked audio track is locked.".into()));
+                    }
+                    let from = partner.start + delta;
+                    let to = partner.end() + delta;
+                    if tr.items.iter().any(|it| !linked_ids.contains(&it.id) && it.start < to && it.end() > from) {
+                        return Err(MobileError::Command("Moving here would overlap another audio clip.".into()));
+                    }
+                }
+            }
+        }
+    }
+    ex(s, "timeline.move", json!({
+        "moves": [{"clip": c.id.0, "track": "V1", "time": start.0}],
+        "insert": false,
+        "linked": true
+    }))?;
+    Ok(())
+}
+
 /// Move an overlay or audio clip to `start` on lane `index` (1, 2… overlays; -1, -2… audio). A
 /// lane that is taken there sends it to the nearest free one.
 pub(crate) fn move_clip(s: &mut Session, id: u64, index: i32, start: i64) -> Result<(), MobileError> {
