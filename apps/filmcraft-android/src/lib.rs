@@ -580,9 +580,9 @@ impl MobileSession {
         self.main_edit(|s| edits::trim(s, clip, head, delta))
     }
 
-    /// Move a main-track clip to position `index`.
+    /// Reorder main-track videos while leaving captions at their own time positions.
     pub fn reorder(&self, clip: u64, index: u32) -> Result<(), MobileError> {
-        self.main_edit(|s| edits::reorder(s, clip, index))
+        edits::reorder(&mut self.lock(), clip, index)
     }
 
     /// Move the timeline's 0-second origin and rebase all timed content in one edit.
@@ -591,9 +591,9 @@ impl MobileSession {
         edits::shift_origin(&mut self.lock(), delta)
     }
 
-    /// Move a main-track video into an unoccupied time range, taking linked audio with it.
+    /// Move main-track video and linked audio, without automatically dragging captions.
     pub fn move_main_clip(&self, clip: u64, start: i64) -> Result<(), MobileError> {
-        self.main_edit(|s| edits::move_main_clip(s, clip, start))
+        edits::move_main_clip(&mut self.lock(), clip, start)
     }
 
     /// Move an overlay or audio clip to `start` on lane `index`.
