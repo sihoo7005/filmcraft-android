@@ -3,6 +3,16 @@
 This log tracks the Android app's development builds. The version shown in
 **Settings > About FilmCraft** comes from `apps/filmcraft-android/android/gradle.properties`.
 
+## 0.0.2-beta.4 (2026-11-22)
+
+- **Video timeline:** Fix the case where a long-pressed video appears to move horizontally during the drag but snaps back after release.
+- **True position moves:** A main-track video can now be placed at a new, unoccupied timeline time, including when there is only one video. Empty gaps remain empty instead of forcing the clip back to its original slot.
+- **Multiple videos:** If a dropped video would overlap another video, use the existing reorder behavior rather than overwriting that other video. The drag preview no longer suggests movement for a collision that leaves the reorder slot unchanged.
+- **Linked audio:** Move linked audio with the video; reject free moves that would overwrite unrelated audio. Edits remain undoable.
+- Add Rust and Kotlin regression tests for empty-gap moves, overlap protection and undo.
+
+Source change only; the APK has not been built or tested on a device.
+
 ## 0.0.2-beta.3 (2026-11-22)
 
 - **Video timeline:** Keep main-track clip drag previews on the same horizontal lane; overlay and audio clips still support vertical lane moves.
