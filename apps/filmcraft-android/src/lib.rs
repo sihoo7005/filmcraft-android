@@ -585,6 +585,11 @@ impl MobileSession {
         self.main_edit(|s| edits::reorder(s, clip, index))
     }
 
+    /// Move a main-track video into an unoccupied time range, taking linked audio with it.
+    pub fn move_main_clip(&self, clip: u64, start: i64) -> Result<(), MobileError> {
+        self.main_edit(|s| edits::move_main_clip(s, clip, start))
+    }
+
     /// Move an overlay or audio clip to `start` on lane `index`.
     pub fn move_clip(&self, clip: u64, index: i32, start: i64) -> Result<(), MobileError> {
         self.main_edit(|s| edits::move_clip(s, clip, index, start))
