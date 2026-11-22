@@ -166,6 +166,12 @@ private fun clipTools(ed: EditorController, c: ClipInfo): List<Tool> {
             split, delete,
             Tool("editor_tool_retime_submenu", "Retime", LucideIcons.Timer.glyph()) { ed.submenu = Submenu.Retime },
             if (c.hasAudio) Tool("editor_tool_audio_submenu", "Audio", (if (c.muted) LucideIcons.VolumeX else LucideIcons.Volume2).glyph()) { ed.submenu = Submenu.ClipAudio } else null,
+            if (onMain) Tool(
+                "editor_tool_move_captions",
+                if (ed.moveCaptionsWithVideo) "Captions on" else "Captions off",
+                LucideIcons.Captions.glyph(),
+                active = ed.moveCaptionsWithVideo,
+            ) { ed.moveCaptionsWithVideo = !ed.moveCaptionsWithVideo } else null,
         ) + picture + listOf(duplicate, replace)
     }
 }
