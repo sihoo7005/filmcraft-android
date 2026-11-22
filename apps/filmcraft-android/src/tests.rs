@@ -505,6 +505,51 @@ fn dragging_a_video_does_not_drag_or_delete_its_timed_caption() {
 }
 
 #[test]
+fn linked_video_drag_moves_only_its_captions_as_one_undo_step() {
+    let (m, _d, ids) = two_clips();
+    m.execute("captions.add".into(), json!({"seconds": 0.5, "durationSeconds": 0.5}).to_string()).unwrap();
+    m.execute("captions.add".into(), json!({"seconds": 3.0, "durationSeconds": 0.5}).to_string()).unwrap();
+    let times = |m: &MobileSession| m.timeline().unwrap().captions.iter().map(|c| c.start).collect::<Vec<_>>();
+    assert_eq!(times(&m), vec![SEC / 2, 3 * SEC]);
+    m.move_main_clip_with_captions(ids[1], 7 * SEC).unwrap();
+    assert_eq!(clip(&m, ids[1]).start, 7 * SEC);
+    assert_eq!(times(&m), vec![SEC / 2, 8 * SEC], "the first video's subtitle stays fixed");
+    m.undo();
+    assert_eq!(clip(&m, ids[1]).start, 2 * SEC);
+    assert_eq!(times(&m), vec![SEC / 2, 3 * SEC], "video and caption undo together");
+    m.redo();
+    assert_eq!(clip(&m, ids[1]).start, 7 * SEC);
+    assert_eq!(times(&m), vec![SEC / 2, 8 * SEC], "video and caption redo together");
+    m.undo();
+
+    // Reordering the second video to the beginning moves only the subtitle
+    // whose START was inside the second video's original 2-5 second interval.
+    m.reorder_with_captions(ids[1], 0).unwrap();
+    assert_eq!(clip(&m, ids[1]).start, 0);
+    assert_eq!(times(&m), vec![SEC / 2, SEC], "other-video captions remain in place");
+    m.undo();
+    assert_eq!(clip(&m, ids[1]).start, 2 * SEC);
+    assert_eq!(times(&m), vec![SEC / 2, 3 * SEC]);
+}
+
+#[test]
+fn linked_video_drag_rollback_prevents_overlapping_subtitles() {
+    let (m, _d, ids) = two_clips();
+    m.execute("captions.add".into(), json!({"seconds": 1.0, "durationSeconds": 1.0}).to_string()).unwrap();
+    m.execute("captions.add".into(), json!({"seconds": 3.0, "durationSeconds": 1.0}).to_string()).unwrap();
+    let before = m.timeline().unwrap();
+    let before_starts: Vec<_> = before.captions.iter().map(|c| c.start).collect();
+    let before_undo = m.poll().undo_label;
+    // Reordering video B to time zero would carry its subtitle from 3s
+    // to 1s, directly on top of video A's stationary caption.
+    assert!(m.reorder_with_captions(ids[1], 0).is_err());
+    assert_eq!(clip(&m, ids[0]).start, 0);
+    assert_eq!(clip(&m, ids[1]).start, 2 * SEC);
+    assert_eq!(m.timeline().unwrap().captions.iter().map(|c| c.start).collect::<Vec<_>>(), before_starts);
+    assert_eq!(m.poll().undo_label, before_undo, "a failed drag did not leave a partial history entry");
+}
+
+#[test]
 fn moving_timeline_zero_rebases_all_tracks_captions_marks_and_playhead_in_one_undo_step() {
     let (m, _d, ids) = two_clips();
     // Create five seconds of leading silence while retaining two separated videos.
