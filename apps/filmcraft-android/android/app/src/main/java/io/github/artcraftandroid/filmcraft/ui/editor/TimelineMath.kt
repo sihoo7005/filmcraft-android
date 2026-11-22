@@ -131,6 +131,14 @@ object TimelineMath {
     /** Ticks moved by a horizontal drag of [dx] pixels. */
     fun ticksFor(dx: Float, pxPerSecond: Float): Long = (dx / pxPerSecond * TPS).toLong()
 
+    /**
+     * The first filmstrip tile touching the visible screen and clip bounds.
+     * Keep [contentLeft] fixed while the clip's left trim handle moves; otherwise
+     * the thumbnail strip slides along with that handle instead of being cropped.
+     */
+    fun firstFilmstripTile(visibleLeft: Float, contentLeft: Float, tileWidth: Float): Int =
+        floor(((max(0f, visibleLeft) - contentLeft) / tileWidth).toDouble()).toInt()
+
     /** Preview a caption timing drag, keeping it inside the neighbouring captions.
      * The engine validates the final edit again before saving.
      */
