@@ -72,6 +72,27 @@ class TimelineMathTest {
     }
 
     @Test
+    fun filmstripTilesStayAnchoredWhileHeadTrimCropsOrExtendsClip() {
+        val originalLeft = 50f
+        val tileWidth = 40f
+
+        assertEquals(0, TimelineMath.firstFilmstripTile(originalLeft, originalLeft, tileWidth))
+        // Cutting the first 75 px hides tiles before the new edge; existing tiles
+        // remain at x=50, 90, 130 rather than moving to the dragged handle.
+        val cutFirst = TimelineMath.firstFilmstripTile(125f, originalLeft, tileWidth)
+        assertEquals(1, cutFirst)
+        assertEquals(90f, originalLeft + cutFirst * tileWidth, 0f)
+
+        // Extending the clip head uncovers the earlier tile to the left.
+        val extendFirst = TimelineMath.firstFilmstripTile(20f, originalLeft, tileWidth)
+        assertEquals(-1, extendFirst)
+        assertEquals(10f, originalLeft + extendFirst * tileWidth, 0f)
+
+        // A clip that starts off-screen still draws the tile covering x=0.
+        assertEquals(2, TimelineMath.firstFilmstripTile(-50f, -90f, tileWidth))
+    }
+
+    @Test
     fun aDraggedClipLandsInTheSlotUnderTheFinger() {
         val starts = listOf(0L, 10L, 20L)
         val ends = listOf(10L, 20L, 30L)
