@@ -184,6 +184,11 @@ fun Timeline(ed: EditorController, modifier: Modifier = Modifier, compact: Boole
                                         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                         var dx = 0f
                                         var dy = 0f
+                                        // Primary video clips reorder horizontally on V1. Overlay
+                                        // and audio clips can still move between their own lanes.
+                                        val mainTrack = e.timeline?.lanes?.any { lane ->
+                                            lane.kind == LaneKind.MAIN && lane.clips.any { it.id == hitClip.id }
+                                        } == true
                                         move = MoveDrag(hitClip.id, 0f, 0f)
                                         while (true) {
                                             val m = awaitPointerEvent()
@@ -192,12 +197,12 @@ fun Timeline(ed: EditorController, modifier: Modifier = Modifier, compact: Boole
                                             dx += c.positionChange().x
                                             dy += c.positionChange().y
                                             c.consume()
-                                            move = MoveDrag(hitClip.id, dx, dy)
+                                            move = MoveDrag(hitClip.id, dx, if (mainTrack) 0f else dy)
                                         }
                                         val done = move
                                         move = null
                                         e.gesture = false
-                                        if (done != null) g.drop(e, hitClip, done.dx, done.dy, start)
+                                        if (done != null) g.drop(e, hitClip, done.dx, done.dy)
                                     } else {
                                         continue
                                     }
@@ -422,22 +427,20 @@ private class Geometry(
         e.select(c.id)
     }
 
+    /** Main-track reorder target, based on the dragged clip's centre, not the finger's offset. */
+    fun mainReorderSlot(c: ClipInfo, dx: Float): Int {
+        val otherClips = t.lanes.getOrNull(mainIndex)?.clips.orEmpty().filter { it.id != c.id }
+        return TimelineMath.mainReorderSlot(
+            c.start, c.duration, TimelineMath.ticksFor(dx, pxPerSecond),
+            otherClips.map { it.start }, otherClips.map { it.start + it.duration },
+        )
+    }
+
     /** A picked-up clip let go after moving by (dx, dy). */
-    fun drop(e: EditorController, c: ClipInfo, dx: Float, dy: Float, start: Offset) {
+    fun drop(e: EditorController, c: ClipInfo, dx: Float, dy: Float) {
         val lane = t.lanes.firstOrNull { l -> l.clips.any { it.id == c.id } } ?: return
         if (lane.kind == LaneKind.MAIN) {
-            val main = lane.clips.filter { it.id != c.id }
-            val finger = time(start.x + dx)
-            // where it lands among the others, laid end to end without it
-            var cursor = 0L
-            val starts = ArrayList<Long>()
-            val ends = ArrayList<Long>()
-            for (m in main) {
-                starts += cursor
-                cursor += m.duration
-                ends += cursor
-            }
-            val slot = TimelineMath.slotAt(finger, starts, ends)
+            val slot = mainReorderSlot(c, dx)
             val from = lane.clips.indexOfFirst { it.id == c.id }
             if (slot != from) e.reorder(c.id, slot)
             return
@@ -529,8 +532,25 @@ private fun DrawScope.drawTimeline(
         if (move != null) {
             for ((i, lane) in g.t.lanes.withIndex()) {
                 val c = lane.clips.firstOrNull { it.id == move.clip } ?: continue
-                val r = g.rectOf(i, c).translate(move.dx, move.dy)
+                val r = g.rectOf(i, c).translate(move.dx, if (lane.kind == LaneKind.MAIN) 0f else move.dy)
                 drawClip(ed, lane, c, r, true, dp, measurer, alpha = 0.85f)
+                if (lane.kind == LaneKind.MAIN) {
+                    // Indicate the insertion boundary without shifting the other
+                    // clips until the drag is committed.
+                    val from = lane.clips.indexOfFirst { it.id == c.id }
+                    val slot = g.mainReorderSlot(c, move.dx)
+                    if (slot != from) {
+                        val others = lane.clips.filter { it.id != c.id }
+                        val at = others.getOrNull(slot)?.start
+                            ?: others.lastOrNull()?.let { it.start + it.duration }
+                            ?: c.start
+                        val markerX = g.x(at)
+                        drawRoundRect(
+                            Fc.Accent, Offset(markerX - 2f * dp, g.tops[i]),
+                            Size(4f * dp, g.heights[i]), CornerRadius(2f * dp),
+                        )
+                    }
+                }
             }
         }
         // edge shades
