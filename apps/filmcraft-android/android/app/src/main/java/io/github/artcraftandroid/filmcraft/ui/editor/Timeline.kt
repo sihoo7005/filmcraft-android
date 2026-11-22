@@ -492,6 +492,9 @@ private fun DrawScope.drawTimeline(
         for ((i, lane) in g.t.lanes.withIndex()) {
             for (c in lane.clips) {
                 var r = g.rectOf(i, c)
+                // Trimming moves the visible edge, not the underlying footage.
+                // Keep the thumbnail/waveform's original timeline origin during the drag.
+                val contentLeft = r.left
                 if (trim?.clip == c.id) {
                     val d = (trim.delta.toDouble() / TPS * g.pxPerSecond).toFloat()
                     r = if (trim.head) r.copy(left = min(r.left + d, r.right - 2 * dp)) else r.copy(right = max(r.right + d, r.left + 2 * dp))
@@ -501,7 +504,11 @@ private fun DrawScope.drawTimeline(
                     continue
                 }
                 if (r.right < 0 || r.left > size.width) continue
-                drawClip(ed, lane, c, r, c.id == sel, dp, measurer)
+                val previewDuration = if (trim?.clip == c.id) {
+                    TimelineMath.ticksFor(r.width, g.pxPerSecond).coerceAtLeast(0L)
+                } else c.duration
+                drawClip(ed, lane, c, r, c.id == sel, dp, measurer,
+                    contentLeft = contentLeft, displayDuration = previewDuration)
             }
         }
         // transitions between main-track clips, and the ends
@@ -571,6 +578,8 @@ private fun DrawScope.drawClip(
     dp: Float,
     measurer: androidx.compose.ui.text.TextMeasurer,
     alpha: Float = 1f,
+    contentLeft: Float = r.left,
+    displayDuration: Long = c.duration,
 ) {
     val colors = when {
         c.kind == ClipKind.MISSING -> Fc.MissingClip
@@ -592,10 +601,12 @@ private fun DrawScope.drawClip(
             val stripH = r.height - 2 * inset - (if (waveH > 0) waveH + 2 * dp else 0f)
             val aspect = if (c.mediaHeight.toInt() > 0) c.mediaWidth.toFloat() / c.mediaHeight.toFloat() else 16f / 9f
             val tileW = (stripH * aspect).coerceAtLeast(8 * dp)
-            val first = floor((max(0f, -r.left) / tileW).toDouble()).toInt()
+            // Anchor tiles to their pre-trim positions, including negative tile
+            // indices when the user extends the clip's head to earlier footage.
+            val first = TimelineMath.firstFilmstripTile(r.left, contentLeft, tileW)
             var i = first
             while (true) {
-                val x = r.left + i * tileW
+                val x = contentLeft + i * tileW
                 if (x > size.width || x > r.right) break
                 val secondsIn = (i * tileW / ed.pxPerSecond).toDouble() * c.speed
                 val mediaSecond = c.sourceIn.toDouble() / TPS + secondsIn
@@ -626,7 +637,7 @@ private fun DrawScope.drawClip(
                 else -> Fc.VideoWave
             }
             if (c.kind != ClipKind.AUDIO) drawRect(Fc.Black.copy(alpha = 0.05f), Offset(r.left, top), Size(r.width, bottom - top))
-            drawWave(ed, c, r.left, r.right, top, bottom, wave, selected, dp)
+            drawWave(ed, c, r.left, r.right, top, bottom, wave, selected, dp, contentLeft)
         }
         // labels
         when (c.kind) {
@@ -661,7 +672,7 @@ private fun DrawScope.drawClip(
         drawHandle(Rect(r.left - hw, r.top, r.left, r.bottom), left = true, dp)
         drawHandle(Rect(r.right, r.top, r.right + hw, r.bottom), left = false, dp)
         if (lane.kind == LaneKind.MAIN || c.kind == ClipKind.TEXT) {
-            val label = TimelineMath.badge(c.duration)
+            val label = TimelineMath.badge(displayDuration)
             val lay = measurer.measure(label, TextStyle(fontFamily = Inter, fontSize = 13.sp, color = Color(0xFF6BC7FF)))
             val bw = lay.size.width + 8 * dp
             val bx = min(r.right, size.width) - bw - 4 * dp
@@ -693,7 +704,7 @@ private fun DrawScope.drawHandle(r: Rect, left: Boolean, dp: Float) {
     drawRoundRect(Fc.Grip, Offset(r.center.x - 1.5f * dp, r.center.y - gh / 2), Size(3 * dp, gh), CornerRadius(1.5f * dp))
 }
 
-private fun DrawScope.drawWave(ed: EditorController, c: ClipInfo, left: Float, right: Float, top: Float, bottom: Float, colors: Fc.WaveColors, selected: Boolean, dp: Float) {
+private fun DrawScope.drawWave(ed: EditorController, c: ClipInfo, left: Float, right: Float, top: Float, bottom: Float, colors: Fc.WaveColors, selected: Boolean, dp: Float, contentLeft: Float = left) {
     val peaks = if (c.path.isNotEmpty()) ed.media.wave(c.item.toLong(), c.path, c.mediaDuration) else null
     val fill = if (selected) colors.fillSelected else colors.fill
     val line = if (selected) colors.lineSelected else colors.line
@@ -713,7 +724,7 @@ private fun DrawScope.drawWave(ed: EditorController, c: ClipInfo, left: Float, r
     var firstPoint = true
     val gain = c.volume.coerceIn(0.0, 2.0)
     while (x <= x1) {
-        val secs = ((x - left) / ed.pxPerSecond).toDouble() * c.speed + c.sourceIn.toDouble() / TPS
+        val secs = ((x - contentLeft) / ed.pxPerSecond).toDouble() * c.speed + c.sourceIn.toDouble() / TPS
         val i = (secs * MediaCache.WAVE_RATE).toInt().coerceIn(0, peaks.size - 1)
         val v = sqrt((peaks[i] * gain).coerceIn(0.0, 1.0)).toFloat()
         val y = bottom - v * h * WAVE_SCALE
