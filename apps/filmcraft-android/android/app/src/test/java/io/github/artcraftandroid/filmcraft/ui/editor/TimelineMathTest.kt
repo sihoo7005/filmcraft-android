@@ -102,6 +102,26 @@ class TimelineMathTest {
     }
 
     @Test
+    fun mainTrackLongPressReordersOnlyAfterCrossingAnotherClipCentre() {
+        val sec = TPS
+        val before = listOf(0L, 20L * sec)
+        val after = listOf(10L * sec, 30L * sec)
+        fun slot(delta: Long) = TimelineMath.mainReorderSlot(
+            10L * sec, 10L * sec, delta, before, after,
+        )
+
+        // Holding anywhere on the clip without dragging is never an edit.
+        assertEquals(1, slot(0L))
+        assertEquals(1, slot(9L * sec))
+        assertEquals(2, slot(10L * sec))
+        assertEquals(1, slot(-9L * sec))
+        assertEquals(0, slot(-10L * sec))
+
+        // A single main-track clip has no other clip with which to swap.
+        assertEquals(0, TimelineMath.mainReorderSlot(0L, 10L * sec, 100L * sec, emptyList(), emptyList()))
+    }
+
+    @Test
     fun captionMoveAndEdgeTrimsAreClampedToNeighbours() {
         val a = 2 * TPS
         val b = 5 * TPS
