@@ -478,6 +478,73 @@ fn main_video_moves_to_an_empty_gap_with_linked_audio_and_undo() {
 }
 
 #[test]
+fn moving_timeline_zero_rebases_all_tracks_captions_marks_and_playhead_in_one_undo_step() {
+    let (m, _d, ids) = two_clips();
+    // Create five seconds of leading silence while retaining two separated videos.
+    m.move_main_clip(ids[1], 8 * SEC).unwrap();
+    m.move_main_clip(ids[0], 5 * SEC).unwrap();
+    m.execute("captions.add".into(), json!({"seconds": 6.0, "durationSeconds": 1.0}).to_string()).unwrap();
+    {
+        let mut s = m.lock();
+        s.edit_sequence("Prepare origin", |q, _, _| {
+            q.mark_in = Some(Tick(5 * SEC));
+            q.mark_out = Some(Tick(10 * SEC));
+            q.split.video_in = Some(Tick(6 * SEC));
+            q.work_area = Some(TimeRange::new(Tick(5 * SEC), Tick(5 * SEC)));
+            q.markers.push(filmcraft_project::Marker {
+                id: filmcraft_project::MarkerId(900001),
+                start: Tick(6 * SEC),
+                duration: Tick::ZERO,
+                name: "Sync marker".into(),
+                comment: String::new(),
+                kind: filmcraft_project::MarkerKind::Comment,
+                color: Label::Iris,
+            });
+            Ok(())
+        }).unwrap();
+    }
+    m.set_playhead(6 * SEC);
+    let timeline_before = m.timeline().unwrap();
+    assert_eq!(timeline_before.captions[0].start, 6 * SEC);
+    // Request beyond the first media: the earliest element stops the zero point.
+    assert_eq!(m.shift_origin(6 * SEC).unwrap(), 5 * SEC);
+    assert_eq!(clip(&m, ids[0]).start, 0);
+    assert_eq!(clip(&m, ids[1]).start, 3 * SEC);
+    let new = m.timeline().unwrap();
+    assert_eq!(new.captions[0].start, SEC, "captions follow the same time translation");
+    assert_eq!(new.playhead, SEC, "the playhead still points at the same footage");
+    {
+        let s = m.lock();
+        let q = s.active_sequence().unwrap();
+        assert_eq!(q.video_tracks[0].items.iter().map(|v| v.start.0).collect::<Vec<_>>(), vec![0, 3 * SEC]);
+        assert_eq!(q.audio_tracks[0].items.iter().map(|a| a.start.0).collect::<Vec<_>>(), vec![0, 3 * SEC]);
+        assert_eq!(q.markers[0].start, Tick(SEC));
+        assert_eq!(q.mark_in, Some(Tick::ZERO));
+        assert_eq!(q.mark_out, Some(Tick(5 * SEC)));
+        assert_eq!(q.split.video_in, Some(Tick(SEC)));
+        assert_eq!(q.work_area.unwrap().start, Tick::ZERO);
+    }
+    m.undo();
+    assert_eq!(clip(&m, ids[0]).start, 5 * SEC);
+    assert_eq!(clip(&m, ids[1]).start, 8 * SEC);
+    assert_eq!(m.timeline().unwrap().captions[0].start, 6 * SEC);
+    m.redo();
+    assert_eq!(clip(&m, ids[0]).start, 0);
+}
+
+#[test]
+fn moving_zero_left_adds_space_and_zero_cannot_cross_existing_content() {
+    let (m, _d, ids) = two_clips();
+    assert_eq!(m.shift_origin(SEC).unwrap(), 0, "cannot move earliest footage before 0");
+    assert_eq!(m.shift_origin(-2 * SEC).unwrap(), -2 * SEC);
+    assert_eq!(clip(&m, ids[0]).start, 2 * SEC);
+    assert_eq!(clip(&m, ids[1]).start, 4 * SEC);
+    assert_eq!(m.shift_origin(2 * SEC).unwrap(), 2 * SEC);
+    assert_eq!(clip(&m, ids[0]).start, 0);
+    assert_eq!(clip(&m, ids[1]).start, 2 * SEC);
+}
+
+#[test]
 fn a_single_main_video_can_move_right_and_collisions_do_not_delete_footage() {
     let (m, _d, ids) = two_clips();
     assert!(m.move_main_clip(ids[0], SEC).is_err(), "moving across another video must not overwrite it");
