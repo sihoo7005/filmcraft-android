@@ -102,6 +102,17 @@ fn two_clips() -> (Arc<MobileSession>, PathBuf, Vec<u64>) {
 }
 
 #[test]
+fn android_speech_catalogue_exposes_verified_quantized_turbo_without_replacing_base() {
+    let models = speech::speech_models();
+    let ids: Vec<_> = models.iter().map(|m| m.id.as_str()).collect();
+    assert_eq!(ids, vec!["whisper-tiny", "whisper-base", "whisper-large-v3-turbo-q5_0"]);
+    let turbo = models.iter().find(|m| m.id == "whisper-large-v3-turbo-q5_0").unwrap();
+    assert_eq!(turbo.size, 574_041_195);
+    assert_eq!(turbo.files.len(), 1);
+    assert_eq!(turbo.files[0].sha256, "394221709cd5ad1f40c46e6031ca61bce88931e6e088c188294c6d5a55ffa7e2");
+}
+
+#[test]
 fn the_media_a_project_starts_with_cannot_be_undone_away() {
     let (m, _d, ids) = two_clips();
     m.forget_history();
