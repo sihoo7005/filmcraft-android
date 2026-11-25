@@ -29,8 +29,8 @@ use serde_json::{Value, json};
 use crate::edits::{self, ex};
 use crate::{MobileError, model};
 
-/// The speech models the phone offers: small enough to download and quick enough to run.
-const PHONE_MODELS: [&str; 2] = ["whisper-tiny", "whisper-base"];
+/// Tiny/base are economical; Large-v3 Turbo Q5 is an optional heavyweight model.
+const PHONE_MODELS: [&str; 3] = ["whisper-tiny", "whisper-base", "whisper-large-v3-turbo-q5_0"];
 
 /// Seconds of sound read at a time while getting a clip ready to transcribe.
 const READ_SECONDS: i64 = 30;
