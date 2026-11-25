@@ -14,7 +14,7 @@ with Termux's Android/Bionic binaries.
 
    ```sh
    pkg update
-   pkg install git bash openjdk-21 rust clang aapt2
+   pkg install git bash openjdk-21 rust clang cmake aapt2
    ```
 
 3. Install an **Android SDK with platform 37 and build-tools** in an
@@ -62,6 +62,9 @@ After a successful build, the debug APK is at
 - The Gradle `aapt2` Maven override selects the **ARM64 native executable**.
   Native NDK stripping is skipped for this host mode because Google's
   `llvm-strip` for Linux is usually built for x86_64.
+- The Q5_0 Whisper Large V3 Turbo model uses the `whisper-rs`/`whisper.cpp`
+  C++ backend, which needs Termux-native `cmake` and `clang++`. The existing
+  Whisper Tiny and Base models still run through the original Candle backend.
 - Release signing and publication are **not** part of this script.
 - The current root `rust-toolchain.toml` pins Rust **1.99.0** for desktop/CI;
   the Termux-packaged `rustc` and `cargo` must be compatible with the
@@ -71,7 +74,9 @@ After a successful build, the debug APK is at
 ## Known limitations
 
 This is an **unverified** host-build path; it was added without running a
-build. Native ARM64 `aapt2` alone may not be enough if Android Gradle Plugin
+build. In particular, the new whisper.cpp dependency has **not** been compiled
+under Termux or with the Android NDK, and it may require further linker and
+C++ standard-library adjustments. Native ARM64 `aapt2` alone may not be enough if Android Gradle Plugin
 9.2.1 tries to invoke another x86_64-only tool. Third-party Rust build scripts
 might also assume a desktop Linux NDK layout. The build needs enough free
 storage and memory for Gradle, Rust and their caches. Diagnose the first
