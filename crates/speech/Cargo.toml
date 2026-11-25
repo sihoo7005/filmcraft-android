@@ -13,6 +13,8 @@ workspace = true
 default = []
 # Whisper inference on the CPU via candle (pure Rust). Off by default (and in wasm builds).
 whisper = ["dep:candle-core", "dep:candle-nn"]
+# Quantized GGML model support through whisper.cpp (requires native CMake/C++ toolchain).
+whisper-cpp = ["dep:whisper-rs"]
 # Model downloads over HTTPS (pure-Rust TLS: rustls + RustCrypto, OS certificate verification).
 download = ["dep:ureq", "dep:rustls", "dep:rustls-rustcrypto"]
 
@@ -24,6 +26,7 @@ serde_json = { workspace = true }
 thiserror = { workspace = true }
 candle-core = { version = "0.9", default-features = false, optional = true }
 candle-nn = { version = "0.9", default-features = false, optional = true }
+whisper-rs = { version = "=0.16.0", default-features = false, optional = true }
 rayon = { workspace = true }
 ureq = { version = "3", default-features = false, features = ["rustls-no-provider", "platform-verifier"], optional = true }
 rustls = { version = "0.23", default-features = false, optional = true }
