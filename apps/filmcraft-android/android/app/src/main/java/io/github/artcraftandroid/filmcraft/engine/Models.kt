@@ -67,6 +67,22 @@ object ModelDownloads {
         if (state?.error != null) state = null
     }
 
+    /** The file size alone is not sufficient: interrupted or corrupt downloads
+     * can have the expected length, particularly for large Q5 model files. */
+    private fun matches(file: File, size: Long, expectedSha: String): Boolean {
+        if (!file.isFile || file.length() != size) return false
+        val sha = MessageDigest.getInstance("SHA-256")
+        file.inputStream().use { input ->
+            val buf = ByteArray(1 shl 16)
+            while (true) {
+                val n = input.read(buf)
+                if (n < 0) break
+                sha.update(buf, 0, n)
+            }
+        }
+        return sha.digest().joinToString("") { "%02x".format(it) }.equals(expectedSha, ignoreCase = true)
+    }
+
     private suspend fun download(pkg: ModelPackage) = withContext(Dispatchers.IO) {
         val dir = File(pkg.dir).apply { mkdirs() }
         if (!dir.isDirectory) throw IOException("The app's folder for models can't be used.")
@@ -74,9 +90,15 @@ object ModelDownloads {
         val total = pkg.missing.toLong()
         for (f in pkg.files) {
             val target = File(dir, f.name)
-            if (target.isFile && target.length() == f.size.toLong()) continue
+            if (matches(target, f.size.toLong(), f.sha256)) continue
+            // A same-size wrong-hash target must be downloaded again, not silently skipped.
+            if (target.exists()) target.delete()
             val part = File(dir, f.name + ".part")
-            if (part.length() > f.size.toLong()) part.delete()
+            if (matches(part, f.size.toLong(), f.sha256)) {
+                if (!part.renameTo(target)) throw IOException("${f.name} couldn't be saved.")
+                continue
+            }
+            if (part.length() >= f.size.toLong()) part.delete()
             val sha = MessageDigest.getInstance("SHA-256")
             // what an earlier try left counts towards the checksum
             if (part.isFile) part.inputStream().use { input ->
