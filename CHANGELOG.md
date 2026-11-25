@@ -3,6 +3,16 @@
 This log tracks the Android app's development builds. The version shown in
 **Settings > About FilmCraft** comes from `apps/filmcraft-android/android/gradle.properties`.
 
+## 0.0.2-beta.8 (2026-11-25)
+
+- **Optional Whisper Turbo:** Add `Whisper Large V3 Turbo (Q5_0)` to the on-device caption model picker. Tiny and Base stay available, and Base remains the default.
+- **Correct quantized backend:** GGML Q5_0 is not compatible with the existing Candle/safetensors runner. Add a separate, optional whisper.cpp backend through `whisper-rs 0.16.0` and dispatch only the quantized model to it.
+- **Verified download:** Pin the 574,041,195-byte (`547 MiB`) model to its upstream Hugging Face commit and published SHA-256. The Android downloader now checks existing files' checksums and can resume or finalize completed partial downloads.
+- **Caption integration:** Adapt whisper.cpp's token timestamps into FilmCraft's word-timed transcript pipeline, including language detection and optional speaker labels. This path is experimental and has not been benchmarked on an Android device.
+- **Android tooling:** Document the CMake/C++ build requirement for the Turbo engine; update the Termux ARM64 preflight check accordingly. Add catalogue and token-decoding regression tests.
+
+**Unverified:** This is source only. No Rust/Gradle compilation, APK build, device transcription or Android native linking check was run. The new dependency may require further Android-specific toolchain work. Cargo.lock has not been regenerated in this source-only change.
+
 ## 0.0.2-beta.7 (2026-11-22)
 
 - **Video-caption follow toggle:** Select a video on the main track and tap the `Captions off/on` tool to control whether captions move with that video. The default is off, so captions stay at their chosen times.
