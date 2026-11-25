@@ -24,9 +24,9 @@ filmcraft-edit = { workspace = true }
 filmcraft-text = { workspace = true }
 filmcraft-geom = { workspace = true }
 filmcraft-frame = { workspace = true }
-# on-device captions (Whisper) and natural voices (Kokoro), both pure Rust on the CPU; the models
-# are downloaded by the app on first use, never shipped
-filmcraft-speech = { workspace = true, features = ["whisper"] }
+# Tiny/base use Candle CPU; optional GGML Q5 Turbo uses whisper.cpp via whisper-rs.
+# Model weights are downloaded by the user on first use, never shipped in the APK.
+filmcraft-speech = { workspace = true, features = ["whisper", "whisper-cpp"] }
 filmcraft-tts = { workspace = true, features = ["kokoro"] }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
