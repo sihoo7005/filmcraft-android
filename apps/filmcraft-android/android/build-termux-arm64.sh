@@ -12,9 +12,10 @@ fail() {
 [[ -n "${PREFIX:-}" && "${PREFIX}" == *"/com.termux/files/usr" ]] ||
   fail "Use Termux itself, not Ubuntu/Debian PRoot. Those need a different host toolchain."
 
-for tool in java cargo rustc clang aapt2; do
+# The optional quantized Whisper backend compiles whisper.cpp via CMake/C++.
+for tool in java cargo rustc clang clang++ cmake aapt2; do
   command -v "$tool" >/dev/null 2>&1 ||
-    fail "Missing $tool. Install Termux packages (openjdk-21, rust, clang, aapt2)."
+    fail "Missing $tool. Install Termux packages (openjdk-21, rust, clang, cmake, aapt2)."
 done
 
 rust_host="$(rustc -vV | sed -n 's/^host: //p')"
