@@ -22,6 +22,8 @@ pub mod models;
 pub mod vad;
 #[cfg(feature = "whisper")]
 pub mod whisper;
+#[cfg(feature = "whisper-cpp")]
+pub mod whisper_cpp;
 
 use filmcraft_project::Transcript;
 use filmcraft_time::{TICKS_PER_SECOND, Tick};
@@ -124,6 +126,18 @@ pub fn load(models_dir: &std::path::Path, id: &str) -> Result<std::sync::Arc<dyn
     if !models::installed(models_dir, m) {
         return Err(SpeechError::NotInstalled(id.into()));
     }
+    if id == "whisper-large-v3-turbo-q5_0" {
+        #[cfg(feature = "whisper-cpp")]
+        {
+            return Ok(std::sync::Arc::new(whisper_cpp::WhisperCpp::load(
+                &models::model_dir(models_dir, m), m.id,
+            )?));
+        }
+        #[cfg(not(feature = "whisper-cpp"))]
+        {
+            return Err(SpeechError::Unavailable("built without the `whisper-cpp` feature".into()));
+        }
+    }
     #[cfg(feature = "whisper")]
     {
         Ok(std::sync::Arc::new(whisper::Whisper::load(&models::model_dir(models_dir, m), m.id)?))
@@ -136,7 +150,7 @@ pub fn load(models_dir: &std::path::Path, id: &str) -> Result<std::sync::Arc<dyn
 
 /// Whether this build can run speech models.
 pub const fn available() -> bool {
-    cfg!(feature = "whisper")
+    cfg!(feature = "whisper") || cfg!(feature = "whisper-cpp")
 }
 
 /// Mix a multi-channel buffer down to mono.
