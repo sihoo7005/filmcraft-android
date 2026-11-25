@@ -178,6 +178,25 @@ static CATALOGUE: &[ModelInfo] = &[
             ),
         ],
     },
+    // Quantized GGML weights are consumed by whisper.cpp, not the Candle
+    // safetensors backend used by tiny/base/small.
+    ModelInfo {
+        id: "whisper-large-v3-turbo-q5_0",
+        name: "Whisper large-v3 Turbo (Q5_0)",
+        multilingual: true,
+        description: "809 M parameters; 547 MiB download, substantially higher RAM use. Experimental on Android.",
+        license: "MIT (OpenAI Whisper and ggml conversion)",
+        license_url: "https://github.com/ggml-org/whisper.cpp/blob/master/LICENSE",
+        author: "OpenAI / ggml-org",
+        source: "https://huggingface.co/ggerganov/whisper.cpp",
+        files: &[ModelFile {
+            name: "ggml-large-v3-turbo-q5_0.bin",
+            // Fixed to the upstream upload commit, not a mutable `main` URL.
+            url: "https://huggingface.co/ggerganov/whisper.cpp/resolve/98aa99a0a9db05ae2342309f5096248665f7cba3/ggml-large-v3-turbo-q5_0.bin",
+            sha256: "394221709cd5ad1f40c46e6031ca61bce88931e6e088c188294c6d5a55ffa7e2",
+            size: 574_041_195,
+        }],
+    },
 ];
 
 /// The default model.
@@ -326,7 +345,11 @@ mod tests {
         for m in catalogue() {
             assert!(m.size() > 100_000_000, "{}", m.id);
             for f in m.files {
-                assert!(f.url.starts_with("https://huggingface.co/openai/whisper-"), "{}", f.url);
+                assert!(
+                    f.url.starts_with("https://huggingface.co/openai/whisper-")
+                        || f.url.starts_with("https://huggingface.co/ggerganov/whisper.cpp/resolve/"),
+                    "{}", f.url
+                );
                 assert!(f.url.contains("/resolve/") && f.url.ends_with(f.name));
                 assert_eq!(f.sha256.len(), 64);
                 assert!(f.sha256.bytes().all(|b| b.is_ascii_hexdigit()));
@@ -335,6 +358,16 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn turbo_q5_is_revision_pinned_and_is_not_a_safetensors_model() {
+        let m = find("whisper-large-v3-turbo-q5_0").unwrap();
+        assert_eq!(m.size(), 574_041_195);
+        assert_eq!(m.files.len(), 1);
+        assert_eq!(m.files[0].name, "ggml-large-v3-turbo-q5_0.bin");
+        assert_eq!(m.files[0].sha256, "394221709cd5ad1f40c46e6031ca61bce88931e6e088c188294c6d5a55ffa7e2");
+        assert!(m.files[0].url.contains("/resolve/98aa99a0a9db05ae2342309f5096248665f7cba3/"));
     }
 
     #[test]
