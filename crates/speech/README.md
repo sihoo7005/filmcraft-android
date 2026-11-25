@@ -10,8 +10,21 @@ model handling: [docs/transcripts.md](../../docs/transcripts.md).
 - `whisper` (feature `whisper`): Whisper inference on candle (CPU, pure Rust).
 - `mel`, `vad`, `diarize`: log-mel front end, word-bound tightening, MFCC-clustering speaker labels.
 
-Both features are off by default and are never enabled for wasm (`cargo xtask wasm` checks the
-crate without them).
+The existing `whisper` feature loads safetensors through the pure-Rust Candle CPU
+backend. The separate, optional `whisper-cpp` feature loads GGML quantized weights through
+`whisper-rs` / `whisper.cpp` (native C++/CMake); it must **not** be used to load
+safetensors models.
+
+The Android app enables both backends and offers Tiny, Base and **Large V3 Turbo Q5_0**
+(model ID `whisper-large-v3-turbo-q5_0`). The Turbo model is about 547 MiB on
+disk (574,041,195 bytes); the download URL is pinned to its Hugging Face upload
+commit and validated against SHA-256 before use. Unlike Tiny/Base, Turbo
+requires significantly more RAM and CPU. Its Android build, runtime behavior,
+word timestamps and recognition speed **have not been verified**. The model
+is fetched only after the user confirms and is not packaged in the APK.
+
+All inference features are off by default for the general workspace and are not
+enabled for wasm (`cargo xtask wasm` checks the crate without them).
 
 ## References
 
