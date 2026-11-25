@@ -83,7 +83,12 @@ private val LANGUAGES = listOf(
 )
 
 /** The speech models by what they are good at. */
-private fun modelLabel(id: String) = if (id == "whisper-tiny") "Faster" else "More accurate"
+private fun modelLabel(id: String) = when (id) {
+    "whisper-tiny" -> "Faster · Tiny"
+    "whisper-base" -> "Balanced · Base"
+    "whisper-large-v3-turbo-q5_0" -> "Large V3 Turbo · Q5"
+    else -> id
+}
 
 private fun prefs(ctx: Context) = ctx.getSharedPreferences("speech", Context.MODE_PRIVATE)
 
@@ -129,6 +134,13 @@ fun CaptionsPanel(ed: EditorController, close: () -> Unit, modifier: Modifier = 
                             val label = modelLabel(m.id) + if (m.installed) "" else " · " + megabytes(m.missing.toLong())
                             SelectChip(label, model == m.id, { model = m.id }, tag = "captions_model_${m.id}")
                         }
+                    }
+                    if (model == "whisper-large-v3-turbo-q5_0") {
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            "Experimental on Android. The 547 MiB model needs considerably more RAM and CPU time than Base; on-device performance is not yet verified.",
+                            style = FcType.BodySmall, color = Fc.Detail, modifier = pad,
+                        )
                     }
                     Spacer(Modifier.height(16.dp))
                     PrimaryButton(if (has) "Make captions again" else "Make captions", { go() }, modifier = pad, enabled = models.isNotEmpty(), tag = "captions_make_button")
